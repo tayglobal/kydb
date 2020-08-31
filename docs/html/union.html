@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Union &#8212; KYDB 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Base Path" href="base_path.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="union">
+<h1>Union<a class="headerlink" href="#union" title="Permalink to this headline">¶</a></h1>
+<p>The URL used on <em>connect</em> can be a semi-colon separated string.</p>
+<p>This would create a Union Database.</p>
+<p>Connecting:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">db</span> <span class="o">=</span> <span class="n">kydb</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s1">&#39;memory://unittest;s3://my-unittest-fixture&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>OR:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">db</span> <span class="o">=</span> <span class="n">kydb</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s1">&#39;redis://hotfixes.epythoncloud.io:6379;dynamodb://my-prod-src-db&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Reading and writing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">db1</span><span class="p">,</span> <span class="n">db2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">dbs</span>
+<span class="n">db1</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">db2</span><span class="p">[</span><span class="s1">&#39;/bar&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span>
+
+<span class="p">(</span><span class="n">db</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">],</span> <span class="n">db</span><span class="p">[</span><span class="s1">&#39;/bar&#39;</span><span class="p">])</span> <span class="c1"># return (1, 2)</span>
+
+<span class="c1"># Although db2 has /foo, it is db1&#39;s /foo that the union returns</span>
+<span class="n">db2</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">db</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="c1"># return 1</span>
+
+<span class="c1"># writing always happens on the front db</span>
+<span class="n">db</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">db1</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="c1"># returns 4</span>
+<span class="n">db2</span><span class="p">[</span><span class="s1">&#39;/foo&#39;</span><span class="p">]</span> <span class="c1"># returns 3</span>
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">KYDB</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="implementations.html">DB Implementations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="base_path.html">Base Path</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Union</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="base_path.html" title="previous chapter">Base Path</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;MIT License.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/union.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
