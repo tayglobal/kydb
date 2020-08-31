@@ -8,6 +8,7 @@ This is just a simple wrapper for various NoSQL Database. Currently it offers:
    * Read would look for the object in order
    * Write always writes to the first (front) db
 
+See [Documentation](https://tayglobal.github.io/kydb/html/).
    
 ## What does it look like?
 
