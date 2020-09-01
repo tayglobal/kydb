@@ -8,7 +8,7 @@ An abstraction layer for NoSQL Database clients.
    * Read would look for the object in order
    * Write always writes to the first (front) db
 
-See [Documentation](https://tayglobal.github.io/kydb/html/).
+See [Documentation](https://kydb.readthedocs.io/en/latest/).
 
 ## Installation
 
