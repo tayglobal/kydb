@@ -10,7 +10,7 @@ KYDB (Kinyu Database)
 Introduction
 ------------
 
-This is just a simple wrapper for various NoSQL Database. Currently it offers:
+An abstraction layer for NoSQL Database clients.
 
  * Simple factory. A single URL would define the database or union.
  
@@ -21,6 +21,15 @@ This is just a simple wrapper for various NoSQL Database. Currently it offers:
    * Read would look for the object in order
    
    * Write always writes to the first (front) db
+
+
+Installation
+------------
+
+.. code-block:: bash
+
+    pip3 install kydb
+
    
 What does it look like?
 -----------------------
