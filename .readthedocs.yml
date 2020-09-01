@@ -5,4 +5,5 @@ sphinx:
   configuration: docsrc/source/conf.py
 
 python:
+  setup_py_install: true
   version: 3.8
