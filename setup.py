@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setuptools.setup(
   name = 'kydb',
   packages = ['kydb'],
-  version = '0.2.1',
+  version = '0.2.2',
   license='MIT',
   description = 'kydb (Kinyu Database). NoSQL DB interface.',
   long_description=long_description,
