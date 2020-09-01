@@ -22,7 +22,7 @@ pip3 install kydb
 Connect to KYDB with AWS S3 as the implementation
 
 ```python
-from kinyu.db.api import kydb
+import kydb
 db = kydb.connect('s3://my-kydb-bucket')
 ```
 

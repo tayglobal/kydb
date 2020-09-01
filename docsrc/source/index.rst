@@ -36,7 +36,7 @@ What does it look like?
 
 Connect to KYDB with AWS S3 as the implementation::
 
-    from kinyu.db.api import kydb
+    import kydb
     db = kydb.connect('s3://my-kydb-bucket')
 
 Writing to DB::
