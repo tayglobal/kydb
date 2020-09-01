@@ -53,6 +53,6 @@ def _resolve_db_class(url: str):
             list(iter(DB_MODULES.keys())))
 
     class_name = DB_MODULES[db_type]
-    module_path = __name__.rsplit('.', 1)[0] + '.' + db_type
+    module_path = __name__.rsplit('.', 1)[0] + '.impl.' + db_type
     m = importlib.import_module(module_path)
     return getattr(m, class_name)

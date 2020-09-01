@@ -1,4 +1,4 @@
-from .base import BaseDB
+from kydb.base import BaseDB
 from botocore.exceptions import ClientError
 import io
 import boto3

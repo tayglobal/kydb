@@ -1,4 +1,4 @@
-from .base import BaseDB
+from kydb.base import BaseDB
 from boto3.dynamodb.conditions import Key
 import boto3
 

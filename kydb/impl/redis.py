@@ -1,4 +1,4 @@
-from .base import BaseDB
+from kydb.base import BaseDB
 import redis
 
 

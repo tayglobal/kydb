@@ -1,5 +1,5 @@
 import kydb
-from kydb.redis import RedisDB
+from kydb.impl.redis import RedisDB
 from datetime import datetime
 import os
 import pytest
