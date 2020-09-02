@@ -28,6 +28,8 @@ class DbObj:
         self._stored_attrs = [x for x in dir(self) if isinstance(
             getattr(self, x), StoredValue)]
 
+        setattr(self, IS_DB_OBJ, True)
+
         for attr in self._stored_attrs:
             sv = getattr(self, attr)
             v = kwargs.get(attr)
@@ -41,6 +43,10 @@ class DbObj:
 
     def write(self):
         self.db[self.key] = self
+
+    def delete(self):
+        print('++== deleteing ' + self.key)
+        self.db.delete(self.key)
 
 
 def stored(f):

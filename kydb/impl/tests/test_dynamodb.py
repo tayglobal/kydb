@@ -8,6 +8,7 @@ from kydb.impl.tests.test_utils import is_automated_test
 def get_dynamodb_name():
     return os.environ['KINYU_UNITTEST_DYNAMODB']
 
+
 @pytest.fixture
 def db():
     return kydb.connect('dynamodb://' + get_dynamodb_name())

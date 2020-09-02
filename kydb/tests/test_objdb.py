@@ -55,6 +55,11 @@ def test__get_dbobj_config(db):
     assert cfg['class_name'] == OBJ_CLASS_NAME
 
 
+def test_is_dbobj(db):
+    dummy = db.new('DummyClass', '/unittest/dbobj/dummy001')
+    assert db.is_dbobj(dummy)
+
+
 def test_default(db):
     dummy = db.new('DummyClass', '/unittest/dbobj/dummy001')
     assert dummy.currency() == 'USD'
@@ -84,3 +89,5 @@ def test_write(db):
     assert res.key == key
     assert res.db == db
     assert res.currency() == currency
+    res.delete()
+    assert not db.exists(key)

@@ -258,6 +258,3 @@ would only hit the DB once.
         i.e. <kydb.RedisDB redis://my-redis-host/source>
         """
         return f'<{type(self).__name__} {self.url}>'
-
-    def __eq__(self, value):
-        return type(value) == type(self) and self.url == value.url
