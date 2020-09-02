@@ -1,31 +1,31 @@
 import kydb
 import pytest
-from kydb.dbobj.api import DbObjManager
 from kydb.exceptions import DbObjException
 
-OBJ_MODULE_PATH = 'kydb.dbobj.tests.test_api'
+OBJ_MODULE_PATH = 'kydb.tests.test_objdb'
 OBJ_CLASS_NAME = 'DummyClass'
 
-DBOBJ_CONFIG = '''
-  BadClass:
-    missing_module_path: missing
-    class_name: BadClass
-  DummyClass:
-    module_path: {}
-    class_name: {}
-'''.format(OBJ_MODULE_PATH,  OBJ_CLASS_NAME)
+DBOBJ_CONFIG = {
+    'BadClass': {
+        'missing_module_path': 'missing',
+        'class_name': 'BadClass'
+    },
+    'DummyClass': {
+        'module_path': OBJ_MODULE_PATH,
+        'class_name': OBJ_CLASS_NAME
+    }
+}
 
 
 @pytest.fixture
 def db():
     db = kydb.connect('memory://unittest')
     # upload the config
-    DbObjManager.upload_config(db, DBOBJ_CONFIG)
+    db.upload_objdb_config(DBOBJ_CONFIG)
     return db
 
 
-@kydb.dbobj
-class DummyClass:
+class DummyClass(kydb.DbObj):
 
     @kydb.stored
     def currency(self):
@@ -37,20 +37,20 @@ def test__get_dbobj_config_no_cfg():
     db = kydb.connect('memory://unittest')
 
     with pytest.raises(DbObjException):
-        DbObjManager._get_dbobj_config(db, 'MyClass')
+        db._get_dbobj_config('MyClass')
 
 
 def test__get_dbobj_config(db):
 
     # A class that doesn't exist
     with pytest.raises(KeyError):
-        DbObjManager._get_dbobj_config(db, 'MyClass')
+        db._get_dbobj_config('MyClass')
 
     # A class that exists but malformed
     with pytest.raises(DbObjException):
-        DbObjManager._get_dbobj_config(db, 'BadClass')
+        db._get_dbobj_config('BadClass')
 
-    cfg = DbObjManager._get_dbobj_config(db, 'DummyClass')
+    cfg = db._get_dbobj_config('DummyClass')
     assert cfg['module_path'] == OBJ_MODULE_PATH
     assert cfg['class_name'] == OBJ_CLASS_NAME
 
@@ -69,6 +69,8 @@ def test_setvalue(db):
     dummy = db.new('DummyClass', '/unittest/dbobj/dummy001')
     dummy.currency.setvalue('EUR')
     assert dummy.currency() == 'EUR'
+    dummy.currency.clear()
+    assert dummy.currency() == 'USD'
 
 
 def test_write(db):

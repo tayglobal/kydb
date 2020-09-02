@@ -1,4 +1,2 @@
 boto3
 redis
-yaml
-pyyaml

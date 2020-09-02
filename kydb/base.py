@@ -1,7 +1,7 @@
 from abc import ABC
 import pickle
 from typing import Tuple
-from kydb.dbobj.api import DbObjManager
+from .objdb import ObjDBMixin
 
 
 class IDB(ABC):
@@ -38,7 +38,7 @@ class IDB(ABC):
         raise NotImplementedError()
 
 
-class BaseDB(IDB):
+class BaseDB(IDB, ObjDBMixin):
     """
     All implementations derives from this base class except for UnionDB.
 
@@ -177,8 +177,8 @@ would only hit the DB once.
         res = None if reload else self._cache.get(path)
         if not res:
             res = self._deserialise(self.get_raw(path))
-            if DbObjManager.is_data_dbobj(res):
-                res = DbObjManager.read_dbobj(self, res)
+            if self.is_data_dbobj(res):
+                res = self.read_dbobj(res)
 
         self._cache[key] = res
         return res
@@ -191,8 +191,8 @@ would only hit the DB once.
         :param value: str:  The python object
         """
         self._cache[key] = value
-        if DbObjManager.is_dbobj(value):
-            DbObjManager.write_dbobj(value)
+        if self.is_dbobj(value):
+            self.write_dbobj(value)
         else:
             self.set_raw(self._get_full_path(key), self._serialise(value))
 
@@ -249,7 +249,7 @@ would only hit the DB once.
         :param kwargs: the stored attributes to set on the obj
         :returns: an obj of type defined by class_name
         """
-        return DbObjManager.db_obj_new(self, class_name, key, kwargs)
+        return self.db_obj_new(class_name, key, kwargs)
 
     def __repr__(self):
         """
@@ -258,3 +258,6 @@ would only hit the DB once.
         i.e. <kydb.RedisDB redis://my-redis-host/source>
         """
         return f'<{type(self).__name__} {self.url}>'
+
+    def __eq__(self, value):
+        return type(value) == type(self) and self.url == value.url
