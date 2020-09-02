@@ -38,6 +38,13 @@ class DbObj:
 
             sv.setvalue(v)
 
+        self.init()
+
+    def init(self):
+        """ Implement this to add additional initialisation
+        """
+        pass
+
     def get_stored_dict(self):
         return {x: getattr(self, x)() for x in self._stored_attrs}
 
