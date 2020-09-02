@@ -3,6 +3,7 @@ from kydb.impl.redis import RedisDB
 from datetime import datetime
 import os
 import pytest
+from kydb.impl.tests.test_utils import is_automated_test
 
 
 @pytest.fixture
@@ -11,6 +12,7 @@ def db():
         os.environ['KINYU_UNITTEST_REDIS_HOST']))
 
 
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_redis_basic(db):
     key = '/unittests/foo'
     db[key] = 123
@@ -21,6 +23,7 @@ def test_redis_basic(db):
     assert not db.exists(key)
 
 
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_redis_dict(db):
     key = '/unittests/dynamodb/bar'
     val = {
