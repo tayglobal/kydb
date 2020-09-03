@@ -21,38 +21,17 @@ An abstraction layer for NoSQL Database clients.
    * Read would look for the object in order
    
    * Write always writes to the first (front) db
-
-
-Installation
-------------
-
-.. code-block:: bash
-
-    pip3 install kydb
-
    
-What does it look like?
------------------------
+ * Serialisable objects. Any python object can be stored in the DB with
+ 
+   * With option to decorate which property to persist.
+                         
 
-Connect to KYDB with AWS S3 as the implementation::
-
-    import kydb
-    db = kydb.connect('s3://my-kydb-bucket')
-
-Writing to DB::
-
-    key = '/mytest/foo'
-    db[key] = 123
-
-Reading from DB::
-
-    db[key] # returns 123
-    
 Find out more
 -------------
-
    
 .. toctree::
+   install
    examples
    implementations
    api

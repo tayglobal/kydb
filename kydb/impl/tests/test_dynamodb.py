@@ -2,15 +2,19 @@ import kydb
 from datetime import datetime
 import os
 import pytest
+from kydb.impl.tests.test_utils import is_automated_test
 
-DYNAMODB = os.environ['KINYU_UNITTEST_DYNAMODB']
+
+def get_dynamodb_name():
+    return os.environ['KINYU_UNITTEST_DYNAMODB']
 
 
 @pytest.fixture
 def db():
-    return kydb.connect('dynamodb://' + DYNAMODB)
+    return kydb.connect('dynamodb://' + get_dynamodb_name())
 
 
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_dynamodb_basic(db):
     assert type(db).__name__ == 'DynamoDB'
     key = '/unittests/dynamodb/foo'
@@ -21,6 +25,7 @@ def test_dynamodb_basic(db):
     assert not db.exists(key)
 
 
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_dynamodb_dict(db):
     key = '/unittests/dynamodb/bar'
     val = {
@@ -35,14 +40,17 @@ def test_dynamodb_dict(db):
     assert db.read(key, reload=True) == val
 
 
-def test_memory_with_basepath():
-    db = kydb.connect(f'dynamodb://{DYNAMODB}/my/base/path')
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
+def test_dynamodb_with_basepath():
+    db = kydb.connect('dynamodb://{}/my/base/path'.format(
+        get_dynamodb_name()))
     key = '/apple'
     db[key] = 123
     assert db[key] == 123
     assert db.read(key, reload=True) == 123
 
 
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_dynamodb_errors(db):
     with pytest.raises(KeyError):
         db['does_not_exist']

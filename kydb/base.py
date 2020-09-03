@@ -1,29 +1,36 @@
 from abc import ABC
 import pickle
-import importlib
 from typing import Tuple
+from .objdb import ObjDBMixin
 
 
 class IDB(ABC):
-    """
-    The interface that all KYDB adheres to
+    """The interface that all KYDB adheres to
     """
 
     def __getitem__(self, key: str):
-        """
-        Get data from the DB based on key
+        """Get data from the DB based on key
+
         To be implemented by derived class
 
         :param key: str:  The key to get.
+
+example::
+
+    db[key] # returns the object with key
+
         """
         raise NotImplementedError()
 
     def __setitem__(self, key: str, value):
-        """
-        Set data from the DB based on key
+        """Set data from the DB based on key
         To be implemented by derived class
 
         :param key: str:  The key to set.
+
+example::
+
+    db[key] = value # sets key to value
         """
         raise NotImplementedError()
 
@@ -34,11 +41,30 @@ class IDB(ABC):
 
         :param key: str:  The key to delete.
 
+example::
+
+    db.delete(key) # Deletes data with key
         """
         raise NotImplementedError()
 
+    def new(self, class_name: str, key: str, **kwargs):
+        """
+        Create a new object on the DB.
+        The object is not persisted until obj.write() is called.
 
-class BaseDB(IDB):
+        :param class_name: str: name of the class.
+                                This name must be in the config registry
+        :param key: str: The key to persist on the DB
+        :param kwargs: the stored attributes to set on the obj
+        :returns: an obj of type defined by class_name
+
+example::
+
+    obj = db.new('MyClass', key, foo=3)
+        """
+
+
+class BaseDB(IDB, ObjDBMixin):
     """
     All implementations derives from this base class except for UnionDB.
 
@@ -145,6 +171,12 @@ would only hit the DB once.
         Get data from the DB based on key
 
         :param key: str:  The key to get.
+
+        :param key: str:  The key to get.
+
+example::
+
+    db[key] # returns the object with key
         """
         return self.read(key)
 
@@ -153,6 +185,14 @@ would only hit the DB once.
         Flush the cache
 
         :param key: Optionally choose which key to flush (Default value = None)
+
+example::
+
+    obj = db.new('MyClass', key)
+    obj.write()
+    db[key] # read from cache
+    db.refresh() # Or db.refresh(key)
+    db[key] # read from DB
 
         """
         if key:
@@ -172,11 +212,20 @@ would only hit the DB once.
                         from db (Default value = False)
         :returns: The object from DB
 
+example::
+
+    obj = db.new('MyClass', key)
+    obj.write()
+    db.read(key) # read from cache
+    db.read(key, reload=True) # Force loading from DB
+
         """
         path = self._get_full_path(key)
         res = None if reload else self._cache.get(path)
         if not res:
             res = self._deserialise(self.get_raw(path))
+            if self.is_data_dbobj(res):
+                res = self.read_dbobj(res)
 
         self._cache[key] = res
         return res
@@ -187,9 +236,16 @@ would only hit the DB once.
 
         :param key: str:  The key to set.
         :param value: str:  The python object
+
+example::
+
+    db[key] = value # sets key to value
         """
         self._cache[key] = value
-        self.set_raw(self._get_full_path(key), self._serialise(value))
+        if self.is_dbobj(value):
+            self.write_dbobj(value)
+        else:
+            self.set_raw(self._get_full_path(key), self._serialise(value))
 
     def get_raw(self, key: str):
         """
@@ -229,24 +285,30 @@ would only hit the DB once.
         Delete data from the DB based on key
 
         :param key: str:  The key to get
+
+example::
+
+    db.delete(key) # Deletes data with key
         """
         del self._cache[key]
         self.delete_raw(self._get_full_path(key))
 
-    def new(self, class_path: str, key: str, **kwargs):
+    def new(self, class_name: str, key: str, **kwargs):
         """
         Create a new object on the DB.
-        The object is not persisted until obj.put() is called.
+        The object is not persisted until obj.write() is called.
 
-        :param class_path: str: path to the class. i.e. path.to.module.MyClass
+        :param class_name: str: name of the class.
+                                This name must be in the config registry
         :param key: str: The key to persist on the DB
-        :param kwargs: kwargs passed into constructor of the class
-        :returns: an obj of type defined by class_path
+        :param kwargs: the stored attributes to set on the obj
+        :returns: an obj of type defined by class_name
+
+example::
+
+    obj = db.new('MyClass', key, foo=3)
         """
-        module_path, class_name = class_path.rsplit('.', 1)
-        m = importlib.import_module(module_path)
-        cls = getattr(m, class_name)
-        return cls(self, key, **kwargs)
+        return self.db_obj_new(class_name, key, kwargs)
 
     def __repr__(self):
         """
