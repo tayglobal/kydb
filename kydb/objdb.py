@@ -8,7 +8,29 @@ DBOBJ_CONFIG_PATH = '.configs/objdb'
 
 
 class ObjDBMixin:
+    """
+    A Mixin class that BaseDB inherit from.
+
+    This provides functionality for decorated python objects
+    to be stored in KYDB
+    """
+
     def upload_objdb_config(self, config):
+        """Upload ObjDB config to KYDB
+
+           This should only need to be done when new classes are registered or existing ones changes path.
+
+::
+
+    db = kydb.connect('memory://decorated_py_obj')
+
+    db.upload_objdb_config({
+        'Greeter': {
+            'module_path': 'path.to.module',
+            'class_name': 'Greeter'
+        }
+    })
+        """
         self[DBOBJ_CONFIG_PATH] = config
 
     def _get_dbobj_config(self, class_name: str):

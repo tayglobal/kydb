@@ -5,25 +5,32 @@ from .objdb import ObjDBMixin
 
 
 class IDB(ABC):
-    """
-    The interface that all KYDB adheres to
+    """The interface that all KYDB adheres to
     """
 
     def __getitem__(self, key: str):
-        """
-        Get data from the DB based on key
+        """Get data from the DB based on key
+
         To be implemented by derived class
 
         :param key: str:  The key to get.
+
+example::
+
+    db[key] # returns the object with key
+
         """
         raise NotImplementedError()
 
     def __setitem__(self, key: str, value):
-        """
-        Set data from the DB based on key
+        """Set data from the DB based on key
         To be implemented by derived class
 
         :param key: str:  The key to set.
+
+example::
+
+    db[key] = value # sets key to value
         """
         raise NotImplementedError()
 
@@ -34,8 +41,27 @@ class IDB(ABC):
 
         :param key: str:  The key to delete.
 
+example::
+
+    db.delete(key) # Deletes data with key
         """
         raise NotImplementedError()
+
+    def new(self, class_name: str, key: str, **kwargs):
+        """
+        Create a new object on the DB.
+        The object is not persisted until obj.write() is called.
+
+        :param class_name: str: name of the class.
+                                This name must be in the config registry
+        :param key: str: The key to persist on the DB
+        :param kwargs: the stored attributes to set on the obj
+        :returns: an obj of type defined by class_name
+
+example::
+
+    obj = db.new('MyClass', key, foo=3)
+        """
 
 
 class BaseDB(IDB, ObjDBMixin):
@@ -145,6 +171,12 @@ would only hit the DB once.
         Get data from the DB based on key
 
         :param key: str:  The key to get.
+
+        :param key: str:  The key to get.
+
+example::
+
+    db[key] # returns the object with key
         """
         return self.read(key)
 
@@ -153,6 +185,14 @@ would only hit the DB once.
         Flush the cache
 
         :param key: Optionally choose which key to flush (Default value = None)
+
+example::
+
+    obj = db.new('MyClass', key)
+    obj.write()
+    db[key] # read from cache
+    db.refresh() # Or db.refresh(key)
+    db[key] # read from DB
 
         """
         if key:
@@ -172,6 +212,13 @@ would only hit the DB once.
                         from db (Default value = False)
         :returns: The object from DB
 
+example::
+
+    obj = db.new('MyClass', key)
+    obj.write()
+    db.read(key) # read from cache
+    db.read(key, reload=True) # Force loading from DB
+
         """
         path = self._get_full_path(key)
         res = None if reload else self._cache.get(path)
@@ -189,6 +236,10 @@ would only hit the DB once.
 
         :param key: str:  The key to set.
         :param value: str:  The python object
+
+example::
+
+    db[key] = value # sets key to value
         """
         self._cache[key] = value
         if self.is_dbobj(value):
@@ -234,6 +285,10 @@ would only hit the DB once.
         Delete data from the DB based on key
 
         :param key: str:  The key to get
+
+example::
+
+    db.delete(key) # Deletes data with key
         """
         del self._cache[key]
         self.delete_raw(self._get_full_path(key))
@@ -248,6 +303,10 @@ would only hit the DB once.
         :param key: str: The key to persist on the DB
         :param kwargs: the stored attributes to set on the obj
         :returns: an obj of type defined by class_name
+
+example::
+
+    obj = db.new('MyClass', key, foo=3)
         """
         return self.db_obj_new(class_name, key, kwargs)
 

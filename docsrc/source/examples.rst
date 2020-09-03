@@ -51,8 +51,8 @@ Any pickleable object can be stored in the KYDB::
     
     assert db.read(key, reload=True) == val
 
-Decorated Python Objects
-------------------------
+Python Object DB
+================
 
 This requires a config file in the database to map class name to fully qualified path.
 
@@ -147,7 +147,6 @@ Now let's persist it and read it back.
     mary = db.read(key, reload=True)
     mary.greet_count # returns 0
     mary.name() # returns 'Mary'
-
 
 
 
