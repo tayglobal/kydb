@@ -5,3 +5,4 @@ dist/
 docs/
 kydb.egg-info/
 .env
+settings.json
