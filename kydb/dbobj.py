@@ -2,11 +2,13 @@ IS_DB_OBJ = '__is_dbobj__'
 
 
 class StoredValue:
-    """Any function decorated with @kydb.stored would turn the function into a StoredValue
+    """Any function decorated with @kydb.stored would
+        turn the function into a StoredValue
 
-    For example, the method ``name`` would turn into a ``StoredValue`` because of the decorator.
+    For example, the method ``name`` would turn into a
+        ``StoredValue``  because of the decorator.
 
-::    
+::
 
     class Greeter(kydb.DbObj):
 
