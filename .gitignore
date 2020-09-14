@@ -6,3 +6,4 @@ docs/
 kydb.egg-info/
 .env
 settings.json
+**/.~c9_invoke_*
