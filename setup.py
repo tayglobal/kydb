@@ -5,8 +5,8 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='kydb',
-    packages=['kydb'],
-    version='0.3.1',
+    packages=['kydb', 'kydb.impl'],
+    version='0.3.2',
     license='MIT',
     description='kydb (Kinyu Database). NoSQL DB interface.',
     long_description=long_description,
@@ -14,7 +14,6 @@ setuptools.setup(
     author='Tony Yum',
     author_email='tony.yum@tayglobal.com',
     url='https://github.com/tayglobal/kydb',
-    download_url='https://github.com/tayglobal/kydb/archive/v_01.tar.gz',
     keywords=['NoSQL', 'Database', 'DB'],
     install_requires=[            # I get to this in a second
         'boto3',
