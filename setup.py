@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name='kydb',
     packages=['kydb'],
-    version='0.2.2',
+    version='0.3.1',
     license='MIT',
     description='kydb (Kinyu Database). NoSQL DB interface.',
     long_description=long_description,
@@ -26,5 +26,5 @@ setuptools.setup(
         'Topic :: Software Development :: Build Tools',
         'License :: OSI Approved :: MIT License',
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.6',
 )
