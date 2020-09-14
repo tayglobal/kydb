@@ -1,4 +1,6 @@
+.. _Cache Context:
+
 Cache Context
 =============
 
-.. autodecorator:: kydb.cache_context.cache_context
+.. autofunction:: kydb.cache_context.cache_context
