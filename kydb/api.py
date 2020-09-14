@@ -1,29 +1,7 @@
 from .config import DB_MODULES
 from .base import BaseDB, IDB
+from .union import UnionDB
 import importlib
-from typing import Tuple
-
-
-class UnionDB:
-    def __init__(self, dbs: Tuple[BaseDB]):
-        self.dbs = dbs
-
-    def exists(self, key: str):
-        return any(db.exists(key) for db in self.dbs)
-
-    def __getitem__(self, key: str):
-        for db in self.dbs:
-            try:
-                return db[key]
-            except KeyError:
-                pass
-
-        raise KeyError(key)
-
-    def __setitem__(self, key, value):
-        print(f'setting {key} to {value}')
-        print(f'db = {self.dbs[0]}')
-        self.dbs[0][key] = value
 
 
 _db_cache = {}

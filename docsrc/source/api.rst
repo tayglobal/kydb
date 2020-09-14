@@ -15,6 +15,13 @@ KYDB Base Class
     :members:
     :special-members: __getitem__, __setitem__, __repr__
     
+Union DB
+--------
+
+.. autoclass:: kydb.union.UnionDB
+    :members:
+    :special-members: __getitem__, __setitem__, __repr__
+    
 Python Object DB
 ----------------
     
@@ -27,7 +34,7 @@ Decored Python Object
 .. autoclass:: kydb.dbobj.DbObj
     :members:
 
-Stroed Value
+Stored Value
 ------------
 
 .. autoclass:: kydb.dbobj.StoredValue
