@@ -1,10 +1,9 @@
 KYDB (Kinyu Database)
 =====================
 
-+-----------------+----------------+---------------+------------+
-| :ref:`genindex` |:ref:`modindex` | :ref:`search` | `GitHub`_. |
-+-----------------+----------------+---------------+------------+
-
+.. image:: _static/images/GitHub-Mark-32px.png 
+    :target: `GitHub`_
+    
 .. _GitHub: https://github.com/tayglobal/kydb
 
 Introduction

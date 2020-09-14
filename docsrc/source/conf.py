@@ -51,7 +51,7 @@ html_theme = 'alabaster'
 
 logo_only = True
 
-html_logo = 'images/kydb-logo.png'
+html_logo = '_static/images/kydb-logo.png'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
