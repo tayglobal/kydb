@@ -312,8 +312,12 @@ example::
         return self.db_obj_new(class_name, key, kwargs)
         
     def cache_context(self) -> IDB:
+        """ returns the cache context
+        
+        See :ref:cache_context
+        """
         return cache_context(self)
-
+    
     def __repr__(self):
         """
         The representation of the db.
