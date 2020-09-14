@@ -110,3 +110,29 @@ def test_write(db):
     assert res.greet_count == 1
     res.delete()
     assert not db.exists(key)
+
+
+def test_union():
+    db = kydb.connect('memory://db1;memory://db2')
+    # upload the config
+    db.upload_objdb_config(DBOBJ_CONFIG)
+    key = '/unittest/dbobj/greeter001'
+    obj = db.new('Greeter', key)
+    assert obj.name() == 'John'
+
+    # Object does not exist anywhere in the DB
+    assert not db.exists(key)
+    assert not db.dbs[0].exists(key)
+    assert not db.dbs[1].exists(key)
+
+    obj.write()
+    # object exists only in front DB
+    assert db.exists(key)
+    assert db.dbs[0].exists(key)
+    assert not db.dbs[1].exists(key)
+
+    obj.delete()
+    # Object does not exist anywhere in the DB
+    assert not db.exists(key)
+    assert not db.dbs[0].exists(key)
+    assert not db.dbs[1].exists(key)

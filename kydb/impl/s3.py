@@ -14,6 +14,7 @@ class S3DB(BaseDB):
         try:
             buf = io.BytesIO()
             self.s3.download_fileobj(self.db_name, key, buf)
+            return buf.getvalue()
         except ClientError:
             raise KeyError(key)
 

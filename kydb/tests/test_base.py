@@ -1,4 +1,4 @@
-from kydb.base import BaseDB
+from kydb import BaseDB
 import pytest
 
 

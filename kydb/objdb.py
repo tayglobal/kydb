@@ -18,7 +18,10 @@ class ObjDBMixin:
     def upload_objdb_config(self, config):
         """Upload ObjDB config to KYDB
 
-           This should only need to be done when new classes are registered or existing ones changes path.
+        :param config: The config dict
+
+           This should only need to be done when new classes are registered or
+           existing ones changes path.
 
 ::
 

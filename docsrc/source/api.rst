@@ -27,9 +27,17 @@ Decored Python Object
 .. autoclass:: kydb.dbobj.DbObj
     :members:
 
-Stroed Value
+Stored Value
 ------------
 
 .. autoclass:: kydb.dbobj.StoredValue
     :members:
     
+
+More API
+--------
+    
+.. toctree::
+   union
+   cache_context
+   

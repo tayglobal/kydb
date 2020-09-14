@@ -2,6 +2,7 @@ from abc import ABC
 import pickle
 from typing import Tuple
 from .objdb import ObjDBMixin
+from .cache_context import cache_context
 
 
 class IDB(ABC):
@@ -309,6 +310,13 @@ example::
     obj = db.new('MyClass', key, foo=3)
         """
         return self.db_obj_new(class_name, key, kwargs)
+
+    def cache_context(self) -> IDB:
+        """ returns the cache context
+
+        See :ref:cache_context
+        """
+        return cache_context(self)
 
     def __repr__(self):
         """
