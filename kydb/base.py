@@ -314,7 +314,7 @@ example::
     def cache_context(self) -> IDB:
         """ returns the cache context
 
-        See :ref:cache_context
+        See :ref:`Cache Context`
         """
         return cache_context(self)
 
