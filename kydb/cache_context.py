@@ -5,7 +5,7 @@ import copy
 @contextmanager
 def cache_context(db):
     """The Cache Context
-        
+
 Often we would like to serve a single request which requires
 repeated reads to a single object Perhaps pricing a book has
 underlying instruments accessing the same IRCurve.
@@ -26,33 +26,33 @@ Well we could:
 
 This is where the ``cache_context()`` comes handy. See the example below:
 
-        
+
 ::
-        
+
     db = kydb.connect('dynamodb://tradingdb')
     book = db['/Books/MyBook']
-    
+
     with db.cache_context():
-    
+
         positions = book.Positions()
-    
+
         while keep_pricing():
 
             with db.cache_context():
                 for qty, inst in positions.items():
                     print((qt, inst, inst.Price()))
-                    
+
             wait_for_next_marketdata_tick()
-                    
+
             # At this point all market data cache disappears
-            
+
     # At this point all position cache disappears
-                        
+
 
     """
     orig_cache = db._cache
     db._cache = copy.copy(orig_cache)
-    
+
     try:
         yield db
     finally:
