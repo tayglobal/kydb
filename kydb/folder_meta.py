@@ -10,28 +10,29 @@ class FolderMetaMixin:
     def _mkdir(self, folders: List[str]):
         curr_folder = '/'
         for folder in folders:
-            meta_path = self._folder_meta_path(curr_folder)
-            try:
-                folder_meta = self[meta_path]
-            except KeyError:
-                folder_meta = set()
+            meta_path = self._folder_meta_path(curr_folder, folder)
+            if not self.exists(meta_path):
+                self.set_raw(meta_path, self._serialise(True))
 
-            folder_meta.add(folder)
-
-            self.set_raw(meta_path, self._serialise(folder_meta))
             curr_folder += folder + '/'
 
     @staticmethod
-    def _folder_meta_path(folder: str):
-        return folder + '.folder-meta'
+    def _folder_meta_path(folder: str, subfolder: str):
+        return folder + '.folder-' + subfolder
 
-    def list_subdir(self, folder: str):
-        meta_path = self._folder_meta_path(self._ensure_slashes(folder))
-        try:
-            for subfolder in sorted(self[meta_path]):
-                yield subfolder
-        except KeyError:
-            pass
+    @staticmethod
+    def _is_folder_meta(objname: str):
+        return objname.startswith('.folder-')
+
+    def list_dir(self, folder: str, include_dir=True):
+        for objname in self.list_dir_raw(folder):
+            if self._is_folder_meta(objname):
+                if include_dir:
+                    # Cut out the folder meta prefix
+                    # and add /
+                    yield objname[8:] + '/'
+            else:
+                yield objname
 
     def __setitem__(self, key: str, value):
         key = self._ensure_slashes(key)[:-1]

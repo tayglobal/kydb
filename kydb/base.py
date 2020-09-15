@@ -1,6 +1,6 @@
 from abc import ABC
 import pickle
-from typing import Tuple, List
+from typing import Tuple
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
 
@@ -35,31 +35,20 @@ example::
         """
         raise NotImplementedError()
 
-    def list_obj(self, folder: str, include_hidden=False):
-        for filename in self.list_obj_raw(folder):
-            if self._hidden_filter(filename, include_hidden):
-                yield filename
+    def list_dir(self, folder: str, include_dir=True):
+        """ List the folder
 
-    def list_obj_raw(self, folder: str):
+        :param folder: The folder to lsit
+        :parm include_dir: include subfolders
+
+        Note Folders always ends with ``/``
+        Objects does not
+        """
+        for filename in self.list_dir_raw(folder):
+            yield filename
+
+    def list_dir_raw(self, folder: str):
         raise NotImplementedError()
-
-    def list_subdir(self, folder: str, include_hidden=False):
-        for filename in self.list_obj_raw(folder):
-            if self._hidden_filter(filename, include_hidden):
-                yield filename
-
-    def list_subdir_raw(self, folder: str):
-        raise NotImplementedError()
-
-    @staticmethod
-    def _hidden_filter(filename: str, include_hidden: bool):
-        return not filename.startswith('.') or include_hidden
-
-    def list_obj_as_list(self, folder: str) -> List[str]:
-        return list(iter(self.list_obj(folder)))
-
-    def list_subdir_as_list(self, folder: str) -> List[str]:
-        return list(iter(self.list_subdir(folder)))
 
     def delete(self, key: str):
         """
@@ -268,12 +257,44 @@ example::
         Set data from the DB based on key
 
         :param key: str:  The key to set.
-        :param value: str:  The python object
+        :param value:  The python object
 
 example::
 
     db[key] = value # sets key to value
+
+Note: key cannot have any component that has
+a dot (.) prefix.
+
+i.e. the below are illegal and would raise KeyError
+
+::
+
+    db['.foo'] = 123 # raises KeyError
+    db['/.foo'] = 123 # raises KeyError
+    db['/my/folder/.foo'] 123 # raises KeyError
+    db['/my-folder/.another-folder/foo'] = 123 # raises KeyError
+
         """
+        self.set(key, value)
+
+    def set(self, key: str, value, system_obj=False):
+        """Set data from the DB based on key
+
+        :param key: str:  The key to set.
+        :param value:  The python object
+        :param system_obj: bool: True if a system object
+
+        Same as __setitem__ except it can write system objects
+        i.e. object with a (.) dot prefix.
+
+        Note: only use this if you know what you're doing
+        """
+        if not system_obj and \
+                any(x for x in key.rsplit('/') if x.startswith('.')):
+            raise KeyError('Cannot have dot (.) prefix in path, '
+                           'got :' + key)
+
         self._cache[key] = value
         if self.is_dbobj(value):
             self.write_dbobj(value)

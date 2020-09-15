@@ -34,7 +34,7 @@ class ObjDBMixin:
         }
     })
         """
-        self[DBOBJ_CONFIG_PATH] = config
+        self.set(DBOBJ_CONFIG_PATH, config, system_obj=True)
 
     def _get_dbobj_config(self, class_name: str):
         try:

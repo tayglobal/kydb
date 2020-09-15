@@ -1,5 +1,6 @@
 from kydb.base import BaseDB
 from kydb.folder_meta import FolderMetaMixin
+import re
 
 
 class MemoryDB(FolderMetaMixin, BaseDB):
@@ -18,9 +19,14 @@ class MemoryDB(FolderMetaMixin, BaseDB):
     def delete_raw(self, key: str):
         del self.__cache[self.db_name][key]
 
-    def list_obj_raw(self, folder: str):
+    @staticmethod
+    def _list_dir_regex(folder: str):
+        return re.compile(f'^{folder}([^/]+)$')
+
+    def list_dir_raw(self, folder: str):
         folder = self._ensure_slashes(folder)
-        num_chars = len(folder)
+        pattern = self._list_dir_regex(folder)
         for path in self.__cache[self.db_name].keys():
-            if path.startswith(folder) and '/' not in path[num_chars:]:
-                yield path.rsplit('/', 1)[1]
+            match = pattern.search(path)
+            if match:
+                yield match.groups(0)[0]

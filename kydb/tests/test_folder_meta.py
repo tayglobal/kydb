@@ -18,27 +18,31 @@ def test_mkdir_shallow():
     db = DummyDb('memory://test-mkdir')
     db.mkdir('/my-folder1')
     db.mkdir('/my-folder2')
-    assert db['/.folder-meta'] == {'my-folder1', 'my-folder2'}
-    assert db.list_subdir_as_list('/') == ['my-folder1', 'my-folder2']
-    assert db.list_subdir_as_list('') == ['my-folder1', 'my-folder2']
+    folder_meta_path = list(db.cache.keys())
+    expected = ['/.folder-my-folder1', '/.folder-my-folder2']
+    assert folder_meta_path == expected
 
 
 def test_mkdir_deep():
     db = DummyDb('memory://test-mkdir')
     db.mkdir('/foo/bar/baz/data')
-    assert db.list_subdir_as_list('/') == ['foo']
-    assert db.list_subdir_as_list('/foo') == ['bar']
-    assert db.list_subdir_as_list('/foo/bar') == ['baz']
-    assert db.list_subdir_as_list('/foo/bar/baz') == ['data']
+    folder_meta_path = list(db.cache.keys())
+    expected = ['/.folder-foo', '/foo/.folder-bar',
+                '/foo/bar/.folder-baz',
+                '/foo/bar/baz/.folder-data']
+    assert folder_meta_path == expected
 
 
 def test_setitem():
     db = DummyDb('memory://test-mkdir')
     key = '/path/to/my/item'
     db[key] = 123
-    assert db.list_subdir_as_list('/') == ['path']
-    assert db.list_subdir_as_list('/path') == ['to']
-    assert db.list_subdir_as_list('/path/to') == ['my']
-    assert db.list_subdir_as_list('/path/to/my/item') == []
+    folder_meta_path = list(db.cache.keys())
+
+    expected = ['/.folder-path', '/path/.folder-to',
+                '/path/to/.folder-my',
+                '/path/to/my/item']
+
+    assert folder_meta_path == expected
 
     assert db.read(key, reload=True) == 123

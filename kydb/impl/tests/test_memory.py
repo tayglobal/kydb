@@ -18,7 +18,7 @@ def list_dir_db():
     return db
 
 
-def test_memory(db):
+def test_memory_basic(db):
     key = '/unittests/foo'
     db[key] = 123
     assert db[key] == 123
@@ -35,6 +35,24 @@ def test_memory_errors(db):
 
     with pytest.raises(KeyError):
         db.delete('does_not_exist')
+
+
+def test_memory_bad_key(db):
+
+    with pytest.raises(KeyError):
+        db['.'] = 123
+
+    with pytest.raises(KeyError):
+        db['.foo'] = 123
+
+    with pytest.raises(KeyError):
+        db['/.foo'] = 123
+
+    with pytest.raises(KeyError):
+        db['/my-folder/.foo'] = 123
+
+    with pytest.raises(KeyError):
+        db['/my-folder/.another-folder/foo'] = 123
 
 
 def test_memory_dict(db):
@@ -59,27 +77,25 @@ def test_memory_with_basepath():
     assert db.read(key, reload=True) == 123
 
 
-def test_list_obj(list_dir_db):
+def test_list_dir_with_subdir(list_dir_db):
     db = list_dir_db
 
     def test_list_dir(path, expected):
-        assert list(iter(db.list_obj(path))) == expected
+        assert list(db.list_dir(path, include_dir=True)) == expected
+
+    test_list_dir('/', ['root', 'folder1/'])
+    test_list_dir('', ['root', 'folder1/'])
+    test_list_dir('/folder1/', ['foo', 'bar', 'folder2/'])
+    test_list_dir('/folder1', ['foo', 'bar', 'folder2/'])
+
+
+def test_list_dir_no_subdir(list_dir_db):
+    db = list_dir_db
+
+    def test_list_dir(path, expected):
+        assert list(db.list_dir(path, include_dir=False)) == expected
 
     test_list_dir('/', ['root'])
     test_list_dir('', ['root'])
     test_list_dir('/folder1/', ['foo', 'bar'])
     test_list_dir('/folder1', ['foo', 'bar'])
-
-
-def test_list_subdir(list_dir_db):
-    db = list_dir_db
-
-    def test_list_dir(path, expected):
-        assert list(iter(db.list_subdir(path))) == expected
-
-    test_list_dir('/', ['folder1'])
-    test_list_dir('', ['folder1'])
-    test_list_dir('/folder1/', ['folder2'])
-    test_list_dir('/folder1', ['folder2'])
-    test_list_dir('/folder1/folder2', [])
-    test_list_dir('/folder1/folder2/', [])
