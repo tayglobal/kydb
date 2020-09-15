@@ -42,7 +42,7 @@ class ObjDBMixin:
         except KeyError:
             raise DbObjException('Missing config file '
                                  + DBOBJ_CONFIG_PATH
-                                 + 'Please ensure it exists in ' + str(self))
+                                 + '. Please ensure it exists in ' + str(self))
 
         cfg = config[class_name]
         if not ('module_path' in cfg and 'class_name' in cfg):

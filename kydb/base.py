@@ -1,6 +1,6 @@
 from abc import ABC
 import pickle
-from typing import Tuple
+from typing import Tuple, List
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
 
@@ -34,6 +34,32 @@ example::
     db[key] = value # sets key to value
         """
         raise NotImplementedError()
+
+    def list_obj(self, folder: str, include_hidden=False):
+        for filename in self.list_obj_raw(folder):
+            if self._hidden_filter(filename, include_hidden):
+                yield filename
+
+    def list_obj_raw(self, folder: str):
+        raise NotImplementedError()
+
+    def list_subdir(self, folder: str, include_hidden=False):
+        for filename in self.list_obj_raw(folder):
+            if self._hidden_filter(filename, include_hidden):
+                yield filename
+
+    def list_subdir_raw(self, folder: str):
+        raise NotImplementedError()
+
+    @staticmethod
+    def _hidden_filter(filename: str, include_hidden: bool):
+        return not filename.startswith('.') or include_hidden
+
+    def list_obj_as_list(self, folder: str) -> List[str]:
+        return list(iter(self.list_obj(folder)))
+
+    def list_subdir_as_list(self, folder: str) -> List[str]:
+        return list(iter(self.list_subdir(folder)))
 
     def delete(self, key: str):
         """
@@ -131,8 +157,7 @@ Instead use the ``connect``. i.e.::
         return pickle.dumps(obj)
 
     def _deserialise(self, data):
-        """
-        Deserialise the data
+        """ Deserialise the data
 
         :param obj:
         :returns: Unpickle data
@@ -231,6 +256,13 @@ example::
         self._cache[key] = res
         return res
 
+    def mkdir(self, folder: str):
+        if not folder or folder == '/':
+            raise ValueError('Cannot make folder: ' + folder)
+
+        folders = self._ensure_slashes(folder)[1:-1].split('/')
+        self._mkdir(folders)
+
     def __setitem__(self, key: str, value):
         """
         Set data from the DB based on key
@@ -325,3 +357,19 @@ example::
         i.e. <kydb.RedisDB redis://my-redis-host/source>
         """
         return f'<{type(self).__name__} {self.url}>'
+
+    @staticmethod
+    def _ensure_slashes(s: str):
+        """Ensures s starts with / and ends with /
+
+        :param s: The string to pass in
+
+        Add slash in front or behind if needed
+        """
+        if not s.endswith('/'):
+            s += '/'
+
+        if not s.startswith('/'):
+            s = '/' + s
+
+        return s

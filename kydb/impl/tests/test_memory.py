@@ -8,6 +8,16 @@ def db():
     return kydb.connect('memory://unittest')
 
 
+@pytest.fixture
+def list_dir_db():
+    db = kydb.connect('memory://unittest')
+    db['/root'] = 'root'
+    db['/folder1/foo'] = 1
+    db['/folder1/bar'] = 2
+    db['/folder1/folder2/baz'] = 3
+    return db
+
+
 def test_memory(db):
     key = '/unittests/foo'
     db[key] = 123
@@ -47,3 +57,29 @@ def test_memory_with_basepath():
     db[key] = 123
     assert db[key] == 123
     assert db.read(key, reload=True) == 123
+
+
+def test_list_obj(list_dir_db):
+    db = list_dir_db
+
+    def test_list_dir(path, expected):
+        assert list(iter(db.list_obj(path))) == expected
+
+    test_list_dir('/', ['root'])
+    test_list_dir('', ['root'])
+    test_list_dir('/folder1/', ['foo', 'bar'])
+    test_list_dir('/folder1', ['foo', 'bar'])
+
+
+def test_list_subdir(list_dir_db):
+    db = list_dir_db
+
+    def test_list_dir(path, expected):
+        assert list(iter(db.list_subdir(path))) == expected
+
+    test_list_dir('/', ['folder1'])
+    test_list_dir('', ['folder1'])
+    test_list_dir('/folder1/', ['folder2'])
+    test_list_dir('/folder1', ['folder2'])
+    test_list_dir('/folder1/folder2', [])
+    test_list_dir('/folder1/folder2/', [])

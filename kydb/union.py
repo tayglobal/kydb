@@ -89,8 +89,6 @@ Reading and writing::
 
         saves the object in the FrontDB
         """
-        print(f'setting {key} to {value}')
-        print(f'db = {self.dbs[0]}')
         self.dbs[0][key] = value
 
     def __repr__(self):
