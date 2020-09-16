@@ -83,6 +83,12 @@ def test_list_dir_with_subdir(list_dir_db):
     def test_list_dir(path, expected):
         assert list(db.list_dir(path, include_dir=True)) == expected
 
+    assert db.is_dir('folder1')
+    assert db.is_dir('/folder1')
+    assert db.is_dir('folder1/')
+    assert db.is_dir('/folder1/folder2')
+    assert db.is_dir('/folder1/folder2/')
+
     test_list_dir('/', ['root', 'folder1/'])
     test_list_dir('', ['root', 'folder1/'])
     test_list_dir('/folder1/', ['foo', 'bar', 'folder2/'])
@@ -99,3 +105,46 @@ def test_list_dir_no_subdir(list_dir_db):
     test_list_dir('', ['root'])
     test_list_dir('/folder1/', ['foo', 'bar'])
     test_list_dir('/folder1', ['foo', 'bar'])
+
+
+def test_rmdir_success(db):
+    db.mkdir('/unittests_rmdir/foo')
+    assert not db.exists('/unittests_rmdir/foo')
+    assert db.is_dir('/unittests_rmdir')
+    assert db.is_dir('/unittests_rmdir/foo')
+    db.rmdir('/unittests_rmdir/foo')
+    assert not db.is_dir('/unittests_rmdir/foo')
+
+    print(db.get_cache())
+    db.rmdir('/unittests_rmdir')
+    assert not db.is_dir('/unittests_rmdir')
+
+
+def test_rmdir_error(db):
+    with pytest.raises(KeyError):
+        db.rmdir('')
+
+    with pytest.raises(KeyError):
+        db.rmdir('.')
+
+    with pytest.raises(KeyError):
+        db.rmdir('/')
+
+    with pytest.raises(KeyError):
+        db.rmdir('does_not_exist')
+
+    with pytest.raises(KeyError):
+        db.rmdir('/does_not_exist')
+
+
+def test_rm_tree(list_dir_db):
+    db = list_dir_db
+    db.rm_tree('folder1')
+
+    assert not db.exists('/folder1')
+    assert not db.exists('/folder1/foo')
+    assert not db.exists('/folder1/bar')
+    assert not db.exists('/folder1/folder2/baz')
+    assert not db.is_dir('/folder1')
+    assert not db.is_dir('/folder1/folder2')
+    assert not db.is_dir('/folder1/folder2/')

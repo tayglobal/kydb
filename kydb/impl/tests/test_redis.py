@@ -25,7 +25,7 @@ def test_redis_basic(db):
 
 @pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_redis_dict(db):
-    key = '/unittests/dynamodb/bar'
+    key = '/unittests/test_redis_dict/bar'
     val = {
         'my_int': 123,
         'my_float': 123.456,
@@ -36,6 +36,46 @@ def test_redis_dict(db):
     db[key] = val
     assert db[key] == val
     assert db.read(key, reload=True) == val
+    db.rm_tree('/unittests/test_redis_dict/')
+
+
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
+def test_list_dir(db):
+    db['/unittests/test_list_dir/list/dir/obj1'] = 123
+    db['/unittests/test_list_dir/list/obj2'] = 123
+    db['/unittests/test_list_dir/obj3'] = 123
+    db['/unittests/obj4'] = 123
+    db['obj5'] = 123
+    db['/unittests/test_list_dir/obj6'] = 123
+    db['/unittests/test_list_dir/obj7'] = 123
+
+    assert 'unittests/' in list(db.list_dir(''))
+    assert 'obj5' in list(db.list_dir(''))
+    assert 'unittests/' in list(db.list_dir('/'))
+    assert 'obj5' in list(db.list_dir('/'))
+    assert 'test_list_dir/' in list(db.list_dir('/unittests'))
+    assert 'obj4' in list(db.list_dir('/unittests'))
+
+    assert list(db.list_dir('/unittests/test_list_dir/')
+                ) == ['list/', 'obj3', 'obj6', 'obj7']
+    assert list(db.list_dir('/unittests/test_list_dir')
+                ) == ['list/', 'obj3', 'obj6', 'obj7']
+    assert list(db.list_dir('unittests/test_list_dir/')
+                ) == ['list/', 'obj3', 'obj6', 'obj7']
+    assert list(db.list_dir('unittests/test_list_dir')
+                ) == ['list/', 'obj3', 'obj6', 'obj7']
+    assert list(db.list_dir('/unittests/test_list_dir/list')
+                ) == ['dir/', 'obj2']
+    assert list(db.list_dir('/unittests/test_list_dir/list/dir/')) == ['obj1']
+
+    with pytest.raises(KeyError):
+        list(db.list_dir('/unittests/test_list_dir/list/dir/obj1'))
+
+    with pytest.raises(KeyError):
+        db['/unittests/test_list_dir/list/dir']
+
+    db.rm_tree('/unittests/test_list_dir')
+    assert not db.is_dir('/unittests/test_list_dir')
 
 
 def test_default_port():

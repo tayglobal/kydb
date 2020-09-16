@@ -47,6 +47,10 @@ example::
         for filename in self.list_dir_raw(folder):
             yield filename
 
+    def ls(self, folder: str, include_dir=True):
+        """ See list_dir """
+        self.list_dir(folder, include_dir)
+
     def list_dir_raw(self, folder: str):
         raise NotImplementedError()
 
@@ -252,6 +256,16 @@ example::
         folders = self._ensure_slashes(folder)[1:-1].split('/')
         self._mkdir(folders)
 
+    def _mkdir(self, folder: str):
+        raise NotImplementedError()
+
+    def is_dir(self, folder: str) -> bool:
+        """ Is this a directory?
+
+        :param folder: Returns True if is directory
+        """
+        raise NotImplementedError()
+
     def __setitem__(self, key: str, value):
         """
         Set data from the DB based on key
@@ -329,7 +343,7 @@ i.e. the below are illegal and would raise KeyError
 
         This is to be implemented by derived class.
 
-        :param key: str:  The key to get, including base_path.
+        :param key: str:  The key to delete
 
         """
         raise NotImplementedError()
@@ -346,6 +360,37 @@ example::
         """
         del self._cache[key]
         self.delete_raw(self._get_full_path(key))
+
+    def rmdir(self, key: str):
+        """
+        Delete folder based on key
+
+        :param key: str:  The key to folder to delete
+
+example::
+
+    db.rmdir(folder) # Deletes folder with key
+        """
+        raise NotImplementedError()
+
+    def rm_tree(self, key: str):
+        """ recursively delete folder
+
+        WARNING: Be careful when using this
+        """
+        if not self.is_dir(key):
+            raise KeyError('{} is not a directory'.format(key))
+
+        folder = self._ensure_slashes(key)
+        objs = list(self.list_dir(key))
+        for obj in objs:
+            path = folder + obj
+            if obj.endswith('/'):
+                self.rm_tree(path)
+            else:
+                self.delete(path)
+
+        self.rmdir(key)
 
     def new(self, class_name: str, key: str, **kwargs):
         """

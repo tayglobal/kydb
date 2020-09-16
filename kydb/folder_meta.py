@@ -16,8 +16,18 @@ class FolderMetaMixin:
 
             curr_folder += folder + '/'
 
-    @staticmethod
-    def _folder_meta_path(folder: str, subfolder: str):
+    @classmethod
+    def _folder_meta_path(cls, folder: str, subfolder: str = ''):
+        folder = cls._ensure_slashes(folder)
+
+        if not subfolder:
+            folder = folder[:-1]
+            if '/' not in folder:
+                raise KeyError('Bad folder: ' + folder)
+
+            folder, subfolder = folder.rsplit('/', 1)
+            folder += '/'
+
         return folder + '.folder-' + subfolder
 
     @staticmethod
@@ -33,6 +43,16 @@ class FolderMetaMixin:
                     yield objname[8:] + '/'
             else:
                 yield objname
+
+    def is_dir(self, folder: str) -> bool:
+        """ Is this a directory?
+
+        :param folder: Returns True if is directory
+        """
+        return self.exists(self._folder_meta_path(folder))
+
+    def rmdir(self, folder: str):
+        return self.delete(self._folder_meta_path(folder))
 
     def __setitem__(self, key: str, value):
         key = self._ensure_slashes(key)[:-1]

@@ -1,8 +1,10 @@
 from kydb.base import BaseDB
+from kydb.folder_meta import FolderMetaMixin
+from redis.exceptions import ResponseError
 import redis
 
 
-class RedisDB(BaseDB):
+class RedisDB(FolderMetaMixin, BaseDB):
 
     def __init__(self, url: str):
         super().__init__(url)
@@ -26,14 +28,30 @@ class RedisDB(BaseDB):
         return kwargs
 
     def get_raw(self, key: str):
-        res = self.connection.get(key)
+        try:
+            res = self.connection.get(key)
+        except ResponseError:
+            raise KeyError(f'{key} is not a valid key')
+
         if not res:
             raise KeyError(key)
 
         return res
 
     def set_raw(self, key: str, value):
+        folder, obj = key.rsplit('/', 1)
+        self.connection.hset(folder, obj, '.')
         self.connection.set(key, value)
 
     def delete_raw(self, key: str):
         self.connection.delete(key)
+        folder, obj = key.rsplit('/', 1)
+        self.connection.hdel(folder, obj)
+
+    def list_dir_raw(self, folder: str):
+        folder = self._ensure_slashes(folder)[:-1]
+        try:
+            for key in self.connection.hgetall(folder).keys():
+                yield key.decode()
+        except ResponseError:
+            raise KeyError(f'{folder} is not a valid folder')

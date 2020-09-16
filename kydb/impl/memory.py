@@ -17,7 +17,11 @@ class MemoryDB(FolderMetaMixin, BaseDB):
         self.__cache[self.db_name][key] = value
 
     def delete_raw(self, key: str):
+        print('deleting: ' + key)
         del self.__cache[self.db_name][key]
+
+    def get_cache(self):
+        return self.__cache[self.db_name]
 
     @staticmethod
     def _list_dir_regex(folder: str):
