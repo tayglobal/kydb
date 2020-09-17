@@ -59,6 +59,18 @@ def test_s3_dict(db):
 
 
 @pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
+def test_deep_folder_1obj(db):
+    db['/unittests/s3/deep/folder/with/1/obj'] = 123
+    assert list(db.list_dir('/unittests/s3/deep')) == ['folder/']
+    assert list(db.list_dir('/unittests/s3/deep/folder')) == ['with/']
+    assert list(db.list_dir('/unittests/s3/deep/folder/with')) == ['1/']
+    assert list(db.list_dir('/unittests/s3/deep/folder/with/1')) == ['obj']
+    assert db.exists('/unittests/s3/deep/folder/with/1/obj')
+    db.delete('/unittests/s3/deep/folder/with/1/obj')
+    assert not db.exists('/unittests/s3/deep/folder/with/1/obj')
+
+
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
 def test_list_dir_with_subdir(list_dir_db):
     db = list_dir_db
 
