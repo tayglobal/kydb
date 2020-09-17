@@ -35,11 +35,14 @@ example::
         """
         raise NotImplementedError()
 
-    def list_dir(self, folder: str, include_dir=True):
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
         """ List the folder
 
         :param folder: The folder to lsit
         :parm include_dir: include subfolders
+        :parm page_size: The number of items to fetch at a time from DB
+                         The result would be identical, only controls
+                         performance
 
         Note Folders always ends with ``/``
         Objects does not

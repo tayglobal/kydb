@@ -34,7 +34,7 @@ class FolderMetaMixin:
     def _is_folder_meta(objname: str):
         return objname.startswith('.folder-')
 
-    def list_dir(self, folder: str, include_dir=True):
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
         for objname in self.list_dir_raw(folder):
             if self._is_folder_meta(objname):
                 if include_dir:

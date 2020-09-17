@@ -76,9 +76,10 @@ def test_list_dir_with_subdir(list_dir_db):
 
     assert 'unittests/' in list(db.list_dir(''))
     assert 'unittests/' in list(db.list_dir('/'))
-    assert ['foo/', 'obj1'] == list(db.list_dir('/unittests/test_list_dir'))
-    assert ['bar/', 'obj2', 'obj3',
-            'obj4'] == list(db.list_dir('/unittests/test_list_dir/foo'))
+    assert set(['foo/', 'obj1']) == \
+        set(db.list_dir('/unittests/test_list_dir'))
+    assert set(['bar/', 'obj2', 'obj3', 'obj4']) == \
+        set(db.list_dir('/unittests/test_list_dir/foo'))
     assert ['obj5'] == list(db.list_dir('/unittests/test_list_dir/foo/bar'))
 
 
@@ -88,7 +89,20 @@ def test_list_dir_no_subdir(list_dir_db):
     assert 'unittests/' not in list(db.list_dir('', False))
     assert 'unittests/' not in list(db.list_dir('/', False))
     assert ['obj1'] == list(db.list_dir('/unittests/test_list_dir', False))
-    assert ['obj2', 'obj3', 'obj4'] == \
-        list(db.list_dir('/unittests/test_list_dir/foo', False))
+    assert set(['obj2', 'obj3', 'obj4']) == \
+        set(db.list_dir('/unittests/test_list_dir/foo', False))
     assert ['obj5'] == list(db.list_dir(
         '/unittests/test_list_dir/foo/bar', False))
+
+
+@pytest.mark.skipif(is_automated_test(), reason="Do not run on automated test")
+def test_pagination(list_dir_db):
+    db = list_dir_db
+    assert 'unittests/' in list(db.list_dir(''))
+    assert 'unittests/' in list(db.list_dir('/'))
+    assert set(['foo/', 'obj1']
+               ) == set(db.list_dir('/unittests/test_list_dir', page_size=1))
+    assert set(['bar/', 'obj2', 'obj3', 'obj4']) == \
+        set(db.list_dir('/unittests/test_list_dir/foo', page_size=1))
+    assert ['obj5'] == list(db.list_dir(
+        '/unittests/test_list_dir/foo/bar', page_size=1))

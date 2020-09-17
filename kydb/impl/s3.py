@@ -32,25 +32,38 @@ class S3DB(BaseDB):
         )
 
     def is_dir(self, folder: str) -> bool:
-        return any(self.list_dir(folder, max_items=1))
+        return any(self.list_dir(folder, page_size=1))
 
-    def list_dir(self, folder: str, include_dir=True, max_items=200):
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
         """ List the folder
 
         :param folder: The folder to lsit
         :parm include_dir: include subfolders
+        :parm page_size: The number of items to fetch at a time from DB
+                         The result would be identical, only controls
+                         performance
 
         Note Folders always ends with ``/``
         Objects does not
         """
         folder = self._ensure_slashes(folder)
 
-        paginator = self.s3.get_paginator('list_objects_v2')
+        res = {}
 
-        for res in paginator.paginate(Bucket=self.db_name, Prefix=folder,
-                                      Delimiter='/',
-                                      PaginationConfig={
-                                          'MaxItems': max_items}):
+        while True:
+            kwargs = {
+                'Bucket': self.db_name,
+                'Delimiter': '/',
+                'MaxKeys': page_size,
+                'Prefix': folder
+            }
+
+            token = res.get('NextContinuationToken')
+
+            if token:
+                kwargs['ContinuationToken'] = token
+
+            res = self.s3.list_objects_v2(**kwargs)
 
             if include_dir:
                 for item in res.get('CommonPrefixes', []):
@@ -58,6 +71,9 @@ class S3DB(BaseDB):
 
             for item in res.get('Contents', []):
                 yield item['Key'].rsplit('/', 1)[1]
+
+            if not res['IsTruncated']:
+                break
 
     def rmdir(self, key: str):
         """Do nothing. S3 doesn't have folders"""
