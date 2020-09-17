@@ -55,5 +55,4 @@ def test_dynamodb_errors(db):
     with pytest.raises(KeyError):
         db['does_not_exist']
 
-    with pytest.raises(KeyError):
-        db.delete('does_not_exist')
+    db.delete('does_not_exist')  # Does not raise though it does not exist

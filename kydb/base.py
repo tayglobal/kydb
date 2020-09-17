@@ -44,15 +44,11 @@ example::
         Note Folders always ends with ``/``
         Objects does not
         """
-        for filename in self.list_dir_raw(folder):
-            yield filename
+        NotImplementedError()
 
     def ls(self, folder: str, include_dir=True):
         """ See list_dir """
         self.list_dir(folder, include_dir)
-
-    def list_dir_raw(self, folder: str):
-        raise NotImplementedError()
 
     def delete(self, key: str):
         """
@@ -358,7 +354,9 @@ example::
 
     db.delete(key) # Deletes data with key
         """
-        del self._cache[key]
+        if key in self._cache:
+            del self._cache[key]
+
         self.delete_raw(self._get_full_path(key))
 
     def rmdir(self, key: str):
