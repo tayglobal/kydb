@@ -38,7 +38,7 @@ class RedisDB(FolderMetaMixin, BaseDB):
 
         return res
 
-    def set_raw(self, key: str, value):
+    def folder_meta_set_raw(self, key: str, value):
         folder, obj = key.rsplit('/', 1)
         self.connection.hset(folder, obj, '.')
         self.connection.set(key, value)
@@ -48,7 +48,7 @@ class RedisDB(FolderMetaMixin, BaseDB):
         folder, obj = key.rsplit('/', 1)
         self.connection.hdel(folder, obj)
 
-    def list_dir_raw(self, folder: str):
+    def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)[:-1]
         try:
             for key in self.connection.hgetall(folder).keys():

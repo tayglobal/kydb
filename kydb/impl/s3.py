@@ -1,10 +1,11 @@
 from kydb.base import BaseDB
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ParamValidationError
 import io
 import boto3
+from kydb.folder_meta import FolderMetaMixin
 
 
-class S3DB(BaseDB):
+class S3DB(FolderMetaMixin, BaseDB):
 
     def __init__(self, url: str):
         super().__init__(url)
@@ -13,28 +14,24 @@ class S3DB(BaseDB):
     def get_raw(self, key: str):
         try:
             buf = io.BytesIO()
-            self.s3.download_fileobj(self.db_name, key, buf)
+            self.s3.download_fileobj(self.db_name, key[1:], buf)
             return buf.getvalue()
         except ClientError:
             raise KeyError(key)
+        except ParamValidationError:
+            raise KeyError(key)
 
-    def set_raw(self, key: str, value):
+    def folder_meta_set_raw(self, key: str, value):
         buf = io.BytesIO(value)
-        self.s3.upload_fileobj(buf, self.db_name, key)
-
-    def _get_s3_path(self, key: str):
-        return 's3://' + self.db_name + self._get_full_path(key)
-
+        self.s3.upload_fileobj(buf, self.db_name, key[1:])
+        
     def delete_raw(self, key: str):
         self.s3.delete_object(
             Bucket=self.db_name,
-            Key=key
+            Key=key[1:]
         )
 
-    def is_dir(self, folder: str) -> bool:
-        return any(self.list_dir(folder, page_size=1))
-
-    def list_dir(self, folder: str, include_dir=True, page_size=200):
+    def list_dir_meta_folder(self, folder: str, page_size: int):
         """ List the folder
 
         :param folder: The folder to lsit
@@ -46,7 +43,7 @@ class S3DB(BaseDB):
         Note Folders always ends with ``/``
         Objects does not
         """
-        folder = self._ensure_slashes(folder)
+        folder = self._ensure_slashes(folder)[1:]
 
         res = {}
 
@@ -65,15 +62,9 @@ class S3DB(BaseDB):
 
             res = self.s3.list_objects_v2(**kwargs)
 
-            if include_dir:
-                for item in res.get('CommonPrefixes', []):
-                    yield item['Prefix'].rsplit('/', 2)[1] + '/'
-
             for item in res.get('Contents', []):
-                yield item['Key'].rsplit('/', 1)[1]
+                path = item['Key']
+                yield path.rsplit('/', 1)[1] if '/' in path else path
 
             if not res['IsTruncated']:
                 break
-
-    def rmdir(self, key: str):
-        """Do nothing. S3 doesn't have folders"""

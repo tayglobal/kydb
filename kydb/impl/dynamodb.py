@@ -20,7 +20,7 @@ class DynamoDB(FolderMetaMixin, BaseDB):
 
         return items[0]['contents'].value
 
-    def set_raw(self, key, value):
+    def folder_meta_set_raw(self, key: str, value):
         folder = key.rsplit('/', 1)[0] + '/'
         self.table.put_item(Item={
             'path': key,
@@ -33,18 +33,7 @@ class DynamoDB(FolderMetaMixin, BaseDB):
             'path': key,
         })
 
-    def list_dir_raw(self, folder: str, include_dir=True, page_size=200):
-        """ List the folder
-
-        :param folder: The folder to lsit
-        :parm include_dir: include subfolders
-        :parm page_size: The number of items to fetch at a time from DB
-                         The result would be identical, only controls
-                         performance
-
-        Note Folders always ends with ``/``
-        Objects does not
-        """
+    def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)
 
         done = False

@@ -11,13 +11,15 @@ class MemoryDB(FolderMetaMixin, BaseDB):
         self.__cache[self.db_name] = {}
 
     def get_raw(self, key):
+        if self.base_path != '/' and key == self._folder_meta_path(self.base_path, ''):
+            raise KeyError('Cannot remove the DB')
+            
         return self.__cache[self.db_name][key]
 
-    def set_raw(self, key, value):
+    def folder_meta_set_raw(self, key: str, value):
         self.__cache[self.db_name][key] = value
 
     def delete_raw(self, key: str):
-        print('deleting: ' + key)
         del self.__cache[self.db_name][key]
 
     def get_cache(self):
@@ -27,7 +29,7 @@ class MemoryDB(FolderMetaMixin, BaseDB):
     def _list_dir_regex(folder: str):
         return re.compile(f'^{folder}([^/]+)$')
 
-    def list_dir_raw(self, folder: str):
+    def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)
         pattern = self._list_dir_regex(folder)
         for path in self.__cache[self.db_name].keys():

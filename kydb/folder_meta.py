@@ -7,7 +7,8 @@ class FolderMetaMixin:
         have such mechanics
     """
 
-    def _mkdir(self, folders: List[str]):
+    def mkdir_raw(self, folder: str):
+        folders = self._ensure_slashes(folder)[1:-1].split('/')
         curr_folder = '/'
         for folder in folders:
             meta_path = self._folder_meta_path(curr_folder, folder)
@@ -34,8 +35,8 @@ class FolderMetaMixin:
     def _is_folder_meta(objname: str):
         return objname.startswith('.folder-')
 
-    def list_dir(self, folder: str, include_dir=True, page_size=200):
-        for objname in self.list_dir_raw(folder):
+    def list_dir_raw(self, folder: str, include_dir: bool, page_size: int):
+        for objname in self.list_dir_meta_folder(folder, page_size):
             if self._is_folder_meta(objname):
                 if include_dir:
                     # Cut out the folder meta prefix
@@ -43,22 +44,29 @@ class FolderMetaMixin:
                     yield objname[8:] + '/'
             else:
                 yield objname
+                
+    def list_dir_meta_folder(self, folder: str, page_size: int):
+        raise NotImplementedError()
 
-    def is_dir(self, folder: str) -> bool:
-        """ Is this a directory?
+    def is_dir_raw(self, folder: str) -> bool:
+        path = self._folder_meta_path(folder)
+        res = self.exists_raw(path)
+        print(f'is_dir_raw({path}) = {res}')
+        if path == '/with_base_path/with_base_path/unittests/test_list_dir/foo/.folder-bar':
+            breakpoint()
+        return self.exists_raw(self._folder_meta_path(folder))
 
-        :param folder: Returns True if is directory
-        """
-        return self.exists(self._folder_meta_path(folder))
+    def rmdir_raw(self, folder: str):
+        return self.delete_raw(self._folder_meta_path(folder))
 
-    def rmdir(self, folder: str):
-        return self.delete(self._folder_meta_path(folder))
-
-    def __setitem__(self, key: str, value):
+    def set_raw(self, key: str, value):
         key = self._ensure_slashes(key)[:-1]
-        parts = key.split('/')[1:]
-        if parts:
-            parts = parts[:-1]
+        folder = key.rsplit('/', 1)[0]
 
-        self._mkdir(parts)
-        super().__setitem__(key, value)
+        if folder:
+            self.mkdir_raw(folder)
+        self.folder_meta_set_raw(key, value)
+        
+        
+    def folder_meta_set_raw(self, key: str, value):
+        raise NotImplementedError()

@@ -1,6 +1,6 @@
 from abc import ABC
 import pickle
-from typing import Tuple
+from typing import Tuple, List
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
 
@@ -47,11 +47,11 @@ example::
         Note Folders always ends with ``/``
         Objects does not
         """
-        NotImplementedError()
-
+        raise NotImplementedError()
+        
     def ls(self, folder: str, include_dir=True):
         """ See list_dir """
-        self.list_dir(folder, include_dir)
+        raise NotImplementedError()
 
     def delete(self, key: str):
         """
@@ -135,8 +135,13 @@ Instead use the ``connect``. i.e.::
         """
         if key.startswith('/'):
             key = key[1:]
+            
+        res = self.base_path + key
+        
+        if not res.startswith('/'):
+            res = '/' + res
 
-        return self.base_path + key
+        return res
 
     def _serialise(self, obj):
         """
@@ -162,27 +167,17 @@ Instead use the ``connect``. i.e.::
 
         :param key: the key
         :returns: True if key exists, False otherwise.
-
-        Note that base implementation is to try and get the object
-        derived db would either return the object or must raise
-        KeyError if not found.
-
-        Returns False if KeyError is raised, True otherwise
-
-There are also side effects. The result is cached so that::
-
-        if db.exists(key):
-            db[key]
-
-would only hit the DB once.
         """
-        # TODO: defer this implmementaion to derived class as exist()
-        # should not need to load the object
+        return self.exists_raw(self._get_full_path(key))
+        
+    def exists_raw(self, key: str) -> bool:
+        """ Same as exist but with base_path prepended """
         try:
-            self[key]
+            self.get_raw(key)
             return True
         except KeyError:
             return False
+
 
     def __getitem__(self, key: str):
         """
@@ -252,10 +247,11 @@ example::
         if not folder or folder == '/':
             raise ValueError('Cannot make folder: ' + folder)
 
-        folders = self._ensure_slashes(folder)[1:-1].split('/')
-        self._mkdir(folders)
+        self.mkdir_raw(self._get_full_path(folder))
 
-    def _mkdir(self, folder: str):
+    def mkdir_raw(self, folder: str):
+        """ same as mkdir but with base_path prepended
+        """
         raise NotImplementedError()
 
     def is_dir(self, folder: str) -> bool:
@@ -263,6 +259,10 @@ example::
 
         :param folder: Returns True if is directory
         """
+        return self.is_dir_raw(self._get_full_path(folder))
+        
+    def is_dir_raw(self, folder: str) -> bool:
+        """ Same as is_dir, but prepended with base_path """
         raise NotImplementedError()
 
     def __setitem__(self, key: str, value):
@@ -357,6 +357,9 @@ example::
 
     db.delete(key) # Deletes data with key
         """
+        if not self.exists(key):
+            raise KeyError('Cannot delete non-existence: ' + key)
+            
         if key in self._cache:
             del self._cache[key]
 
@@ -372,7 +375,41 @@ example::
 
     db.rmdir(folder) # Deletes folder with key
         """
+        if key in ['.', '/', '']:
+            raise KeyError('Directory does not exist: ' + key)
+            
+        path = self._get_full_path(key)
+        
+        if not self.exists_raw(path) and not self.is_dir_raw(path):
+            raise KeyError('Directory does not exist: ' + path)
+
+        self.rmdir_raw(path)
+        
+    def rmdir_raw(self, key: str):
+        """ same as rmdir but with base_path prepended """
         raise NotImplementedError()
+        
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
+        """ List the folder
+
+        :param folder: The folder to lsit
+        :parm include_dir: include subfolders
+        :parm page_size: The number of items to fetch at a time from DB
+                         The result would be identical, only controls
+                         performance
+
+        Note Folders always ends with ``/``
+        Objects does not
+        """
+        return self.list_dir_raw(self._get_full_path(folder), include_dir, page_size)
+        
+    def list_dir_raw(self, folder: str, include_dir: bool, page_size: int):
+        """ Same as list_dir but with base_path prepended to folder """
+        raise NotImplementedError()
+        
+    def ls(self, folder: str, include_dir=True):
+        """ See list_dir """
+        self.list_dir(folder, include_dir)
 
     def rm_tree(self, key: str):
         """ recursively delete folder
