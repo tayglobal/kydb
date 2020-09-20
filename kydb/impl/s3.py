@@ -24,7 +24,7 @@ class S3DB(FolderMetaMixin, BaseDB):
     def folder_meta_set_raw(self, key: str, value):
         buf = io.BytesIO(value)
         self.s3.upload_fileobj(buf, self.db_name, key[1:])
-        
+
     def delete_raw(self, key: str):
         self.s3.delete_object(
             Bucket=self.db_name,

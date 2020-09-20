@@ -39,9 +39,7 @@ def test_setitem():
     db[key] = 123
     folder_meta_path = list(db.cache.keys())
 
-    expected = ['/.folder-path', '/path/.folder-to',
-                '/path/to/.folder-my',
-                '/path/to/my/item']
+    expected = ['/path/to/my/item']
 
     assert folder_meta_path == expected
 

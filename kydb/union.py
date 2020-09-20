@@ -1,9 +1,68 @@
 
 from .base import BaseDB
+from .interface import KYDBInterface
 from typing import Tuple
+from contextlib import ExitStack
 
 
-class UnionDB:
+def front_db_func(self, func_name, *args, **kwargs):
+    return getattr(self.dbs[0], func_name)(*args, **kwargs)
+
+
+def first_success_db_func(self, func_name, *args, **kwargs):
+    first_error = None
+    for db in self.dbs:
+        try:
+            return getattr(db, func_name)(*args, **kwargs)
+        except KeyError as err:
+            if not first_error:
+                first_error = err
+            continue
+
+    raise first_error
+
+
+def any_db_func(self, func_name, *args, **kwargs):
+    return any(getattr(db, func_name)(*args, **kwargs) for db in self.dbs)
+
+
+def all_db_func(self, func_name, *args, **kwargs):
+    for db in self.dbs:
+        getattr(db, func_name)(*args, **kwargs)
+
+
+def create_func(func_prototype, func_name):
+    # Using partial loses the self when constructing
+    # class using type. So use this function
+    def f(self, *args, **kwargs):
+        return func_prototype(self, func_name, *args, **kwargs)
+
+    return f
+
+
+UNION_DB_BASE_FUNCS = [
+    ('__getitem__', first_success_db_func),
+    ('__setitem__', front_db_func),
+    ('delete', front_db_func),
+    ('rmdir', front_db_func),
+    ('rm_tree', front_db_func),
+    ('new', front_db_func),
+    ('exists', any_db_func),
+    ('refresh', all_db_func),
+    ('read', first_success_db_func),
+    ('mkdir', front_db_func),
+    ('is_dir', any_db_func),
+    ('upload_objdb_config', front_db_func)
+]
+
+UnionDBBase = type(
+    'UnionDBBase',
+    (KYDBInterface,),
+    {k: create_func(v, k) for k, v in UNION_DB_BASE_FUNCS}
+)
+
+
+class UnionDB(UnionDBBase):
     """UnionDB
 
 
@@ -41,55 +100,26 @@ Reading and writing::
     def __init__(self, dbs: Tuple[BaseDB]):
         self.dbs = dbs
 
-    def upload_objdb_config(self, config):
-        """Upload ObjDB Conifg
+    def cache_context(self) -> 'KYDBInterface':
+        with ExitStack() as stack:
+            for db in self.dbs:
+                stack.enter_context(db.cache_context())
 
-        :param config: The config dict
+        return stack
 
-        updates only the FrontDB
-        """
-        self.dbs[0].upload_objdb_config(config)
-
-    def new(self, *args, **kwargs):
-        """ Creates a new object
-
-        Calls new on the FrontDB
-        """
-        return self.dbs[0].new(*args, **kwargs)
-
-    def exists(self, key: str):
-        """ key exists  in any of the union of of databases
-
-        :param key: the key to check existance of
-        """
-        return any(db.exists(key) for db in self.dbs)
-
-    def __getitem__(self, key: str):
-        """ get the object based on key
-
-
-        :param key: the key to get
-
-        attempts to resolve object from FrontDB to the back.
-        If not found, raise ``KeyError``
-        """
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
+        res = set()
         for db in self.dbs:
             try:
-                return db[key]
+                res.update(db.list_dir(folder, include_dir, page_size))
             except KeyError:
                 pass
 
-        raise KeyError(key)
+        for key in res:
+            yield key
 
-    def __setitem__(self, key, value):
-        """ set the object based on key
-
-
-        :param key: the key to set
-
-        saves the object in the FrontDB
-        """
-        self.dbs[0][key] = value
+    def ls(self, folder: str, include_dir=True):
+        return list(self.list_dir(folder, include_dir))
 
     def __repr__(self):
         """

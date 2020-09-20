@@ -1,5 +1,6 @@
 from .config import DB_MODULES
-from .base import BaseDB, IDB
+from .base import BaseDB
+from .interface import KYDBInterface
 from .union import UnionDB
 import importlib
 
@@ -7,7 +8,7 @@ import importlib
 _db_cache = {}
 
 
-def connect(url: str) -> IDB:
+def connect(url: str) -> KYDBInterface:
     dbs = [_connect(x) for x in url.split(';')]
     if len(dbs) == 1:
         return dbs[0]

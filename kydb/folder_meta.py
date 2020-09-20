@@ -1,6 +1,3 @@
-from typing import List
-
-
 class FolderMetaMixin:
     """ Used for providing list dir on a folder
         for DB implementations that does not
@@ -44,16 +41,11 @@ class FolderMetaMixin:
                     yield objname[8:] + '/'
             else:
                 yield objname
-                
+
     def list_dir_meta_folder(self, folder: str, page_size: int):
         raise NotImplementedError()
 
     def is_dir_raw(self, folder: str) -> bool:
-        path = self._folder_meta_path(folder)
-        res = self.exists_raw(path)
-        print(f'is_dir_raw({path}) = {res}')
-        if path == '/with_base_path/with_base_path/unittests/test_list_dir/foo/.folder-bar':
-            breakpoint()
         return self.exists_raw(self._folder_meta_path(folder))
 
     def rmdir_raw(self, folder: str):
@@ -66,7 +58,6 @@ class FolderMetaMixin:
         if folder:
             self.mkdir_raw(folder)
         self.folder_meta_set_raw(key, value)
-        
-        
+
     def folder_meta_set_raw(self, key: str, value):
         raise NotImplementedError()
