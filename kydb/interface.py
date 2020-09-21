@@ -155,7 +155,7 @@ example::
 
         :param key: the key
         :returns: True if key exists, False otherwise.
-        
+
         Example:
 
 ::
@@ -239,11 +239,11 @@ example::
 
     def __repr__(self):
         """ The representation of the db.
-        
+
         kydb.connect('s3://my-db')
         # displays <S3DB s3://my-db>
-        
-        kydb.connect('redis://my-cache;dynamodb://my-db') 
+
+        kydb.connect('redis://my-cache;dynamodb://my-db')
         # displays <UnionDB redis://my-cache;dynamodb://my-db>
         """
         raise NotImplementedError()
