@@ -124,7 +124,11 @@ example::
     def rm_tree(self, key: str):
         """ recursively delete folder
 
-        WARNING: Be careful when using this
+.. warning::
+
+    Be careful when using this.
+    For example ``rm_tree('/')`` would wipe out the entire database!
+
         """
         raise NotImplementedError()
 
@@ -151,6 +155,14 @@ example::
 
         :param key: the key
         :returns: True if key exists, False otherwise.
+        
+        Example:
+
+::
+
+    db['/my/key'] = 123
+    db.exists('/my/key') # returns True
+
         """
         raise NotImplementedError()
 
@@ -226,7 +238,14 @@ example::
         raise NotImplementedError()
 
     def __repr__(self):
-        """ The representation of the db. """
+        """ The representation of the db.
+        
+        kydb.connect('s3://my-db')
+        # displays <S3DB s3://my-db>
+        
+        kydb.connect('redis://my-cache;dynamodb://my-db') 
+        # displays <UnionDB redis://my-cache;dynamodb://my-db>
+        """
         raise NotImplementedError()
 
     def upload_objdb_config(self, config):
