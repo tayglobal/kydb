@@ -16,25 +16,8 @@ class ObjDBMixin:
     """
 
     def upload_objdb_config(self, config):
-        """Upload ObjDB config to KYDB
-
-        :param config: The config dict
-
-           This should only need to be done when new classes are registered or
-           existing ones changes path.
-
-::
-
-    db = kydb.connect('memory://decorated_py_obj')
-
-    db.upload_objdb_config({
-        'Greeter': {
-            'module_path': 'path.to.module',
-            'class_name': 'Greeter'
-        }
-    })
-        """
-        self[DBOBJ_CONFIG_PATH] = config
+        """ Implements upload_objdb_config from KYDBInterface """
+        self.set(DBOBJ_CONFIG_PATH, config, system_obj=True)
 
     def _get_dbobj_config(self, class_name: str):
         try:
@@ -42,7 +25,7 @@ class ObjDBMixin:
         except KeyError:
             raise DbObjException('Missing config file '
                                  + DBOBJ_CONFIG_PATH
-                                 + 'Please ensure it exists in ' + str(self))
+                                 + '. Please ensure it exists in ' + str(self))
 
         cfg = config[class_name]
         if not ('module_path' in cfg and 'class_name' in cfg):
@@ -71,8 +54,7 @@ class ObjDBMixin:
         return self.db_obj_new(meta['class_name'],
                                meta['key'], data['data'])
 
-    @staticmethod
-    def write_dbobj(obj):
+    def write_dbobj(self, obj):
         data = {
             IS_DB_OBJ: True,
             'meta': {
@@ -81,4 +63,4 @@ class ObjDBMixin:
             },
             'data': obj.get_stored_dict()
         }
-        obj.db.set_raw(obj.key, pickle.dumps(data))
+        obj.db.set_raw(self._get_full_path(obj.key), pickle.dumps(data))

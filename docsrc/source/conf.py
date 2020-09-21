@@ -49,6 +49,8 @@ exclude_patterns = []
 #
 html_theme = 'alabaster'
 
+html_style = 'kydb-theme.css'
+
 logo_only = True
 
 html_logo = '_static/images/kydb-logo.png'

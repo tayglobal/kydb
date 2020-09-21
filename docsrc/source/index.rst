@@ -9,11 +9,13 @@ KYDB (Kinyu Database)
 Introduction
 ------------
 
-An abstraction layer for NoSQL Database clients.
+An abstraction layer for NoSQL Database with features used in the financial services industry.
 
  * Simple factory. A single URL would define the database or union.
  
- * Caching
+ * Filesystem-like heirachy for objects.
+ 
+ * Caching and cache context.
  
  * Union: i.e. multiple databases where:
  
@@ -23,7 +25,7 @@ An abstraction layer for NoSQL Database clients.
    
  * Serialisable objects. Any python object can be stored in the DB with
  
-   * With option to decorate which property to persist.
+   * With option to use decorators to give finer control over serialisation.
                          
 
 Find out more

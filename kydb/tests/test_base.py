@@ -22,9 +22,9 @@ def db():
 
 
 def test_cache(db):
-    db = DummyDb('memory://unittests')
-    key1 = '/unittests/cache/foo'
-    key2 = '/unittests/cache/bar'
+    db = DummyDb('memory://test_cache')
+    key1 = '/my-folder/foo'
+    key2 = '/my-folder/bar'
     db[key1] = 123
     db[key2] = 234
 
@@ -84,3 +84,12 @@ def test__get_full_path():
     assert DummyDb(
         's3://kinyu-demo/foo/bar')._get_full_path('apple/orange'
                                                   ) == '/foo/bar/apple/orange'
+
+
+def test_mkdir_bad_folder(db):
+    db = DummyDb('s3://test_mkdir')
+    with pytest.raises(ValueError):
+        db.mkdir('')
+
+    with pytest.raises(ValueError):
+        db.mkdir('/')
