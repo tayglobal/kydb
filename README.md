@@ -1,41 +1,23 @@
 # Introduction
 
-An abstraction layer for NoSQL Database clients.
+An abstraction layer for NoSQL Database with features used in the financial services industry.
 
  * Simple factory. A single URL would define the database or union.
- * Caching
+ 
+ * Filesystem-like heirachy for objects.
+ 
+ * Caching and cache context.
+ 
  * Union: i.e. multiple databases where:
+ 
    * Read would look for the object in order
+   
    * Write always writes to the first (front) db
+   
+ * Serialisable objects. Any python object can be stored in the DB with
+ 
+   * With option to use decorators to give finer control over serialisation.
+
 
 See [Documentation](https://kydb.readthedocs.io/en/latest/).
 
-## Installation
-
-```bash
-pip3 install kydb
-```
-
-   
-## What does it look like?
-
-Connect to KYDB with AWS S3 as the implementation
-
-```python
-import kydb
-db = kydb.connect('s3://my-kydb-bucket')
-```
-
-Writing to DB
-
-```python
-key = '/mytest/foo'
-db[key] = 123
-```
-
-Reading from DB
-
-```python
-db[key] # returns 123
-```    
-    
