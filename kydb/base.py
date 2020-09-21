@@ -1,82 +1,12 @@
-from abc import ABC
 import pickle
 from typing import Tuple
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
+from .interface import KYDBInterface
 
 
-class IDB(ABC):
-    """The interface that all KYDB adheres to
-    """
-
-    def __getitem__(self, key: str):
-        """Get data from the DB based on key
-
-        To be implemented by derived class
-
-        :param key: str:  The key to get.
-
-example::
-
-    db[key] # returns the object with key
-
-        """
-        raise NotImplementedError()
-
-    def __setitem__(self, key: str, value):
-        """Set data from the DB based on key
-        To be implemented by derived class
-
-        :param key: str:  The key to set.
-
-example::
-
-    db[key] = value # sets key to value
-        """
-        raise NotImplementedError()
-
-    def delete(self, key: str):
-        """
-        Delete a key from the db.
-        To be implemented by derived class
-
-        :param key: str:  The key to delete.
-
-example::
-
-    db.delete(key) # Deletes data with key
-        """
-        raise NotImplementedError()
-
-    def new(self, class_name: str, key: str, **kwargs):
-        """
-        Create a new object on the DB.
-        The object is not persisted until obj.write() is called.
-
-        :param class_name: str: name of the class.
-                                This name must be in the config registry
-        :param key: str: The key to persist on the DB
-        :param kwargs: the stored attributes to set on the obj
-        :returns: an obj of type defined by class_name
-
-example::
-
-    obj = db.new('MyClass', key, foo=3)
-        """
-
-
-class BaseDB(IDB, ObjDBMixin):
-    """
-    All implementations derives from this base class except for UnionDB.
-
-    This class and all derived classes are never instantiated directly.
-
-Instead use the ``connect``. i.e.::
-
-    import kydb
-
-    db = kydb.connect('dynamodb://my-table')
-    """
+class BaseDB(ObjDBMixin, KYDBInterface):
+    """ Base class for KYDBInterface """
 
     def __init__(self, url: str):
         self.db_type = url.split(':', 1)[0]
@@ -118,7 +48,12 @@ Instead use the ``connect``. i.e.::
         if key.startswith('/'):
             key = key[1:]
 
-        return self.base_path + key
+        res = self.base_path + key
+
+        if not res.startswith('/'):
+            res = '/' + res
+
+        return res
 
     def _serialise(self, obj):
         """
@@ -131,8 +66,7 @@ Instead use the ``connect``. i.e.::
         return pickle.dumps(obj)
 
     def _deserialise(self, data):
-        """
-        Deserialise the data
+        """ Deserialise the data
 
         :param obj:
         :returns: Unpickle data
@@ -140,87 +74,30 @@ Instead use the ``connect``. i.e.::
         return pickle.loads(data)
 
     def exists(self, key) -> bool:
-        """
-        Check if a key exists in the DB
+        """ Implements exists in KYDBInterface """
+        return self.exists_raw(self._get_full_path(key))
 
-        :param key: the key
-        :returns: True if key exists, False otherwise.
-
-        Note that base implementation is to try and get the object
-        derived db would either return the object or must raise
-        KeyError if not found.
-
-        Returns False if KeyError is raised, True otherwise
-
-There are also side effects. The result is cached so that::
-
-        if db.exists(key):
-            db[key]
-
-would only hit the DB once.
-        """
-        # TODO: defer this implmementaion to derived class as exist()
-        # should not need to load the object
+    def exists_raw(self, key: str) -> bool:
+        """ Same as exist but with base_path prepended """
         try:
-            self[key]
+            self.get_raw(key)
             return True
         except KeyError:
             return False
 
     def __getitem__(self, key: str):
-        """
-        Get data from the DB based on key
-
-        :param key: str:  The key to get.
-
-        :param key: str:  The key to get.
-
-example::
-
-    db[key] # returns the object with key
-        """
+        """ Implements __getitem__ in KYDBInterface """
         return self.read(key)
 
     def refresh(self, key=None):
-        """
-        Flush the cache
-
-        :param key: Optionally choose which key to flush (Default value = None)
-
-example::
-
-    obj = db.new('MyClass', key)
-    obj.write()
-    db[key] # read from cache
-    db.refresh() # Or db.refresh(key)
-    db[key] # read from DB
-
-        """
+        """ Implements refresh in KYDBInterface """
         if key:
             del self._cache[key]
         else:
             self._cache = {}
 
     def read(self, key: str, reload=False):
-        """
-        Read object from DB given the key.
-        If key has been read before, this call would simply
-        return the cached value. Use reload to force reloading
-        from DB.
-
-        :param key: str: key to DB
-        :param reload:  Optionally force reloading of the object
-                        from db (Default value = False)
-        :returns: The object from DB
-
-example::
-
-    obj = db.new('MyClass', key)
-    obj.write()
-    db.read(key) # read from cache
-    db.read(key, reload=True) # Force loading from DB
-
-        """
+        """ Implements read in KYDBInterface """
         path = self._get_full_path(key)
         res = None if reload else self._cache.get(path)
         if not res:
@@ -231,22 +108,40 @@ example::
         self._cache[key] = res
         return res
 
+    def mkdir(self, folder: str):
+        """ Implements read in KYDBInterface """
+        if not folder or folder == '/':
+            raise ValueError('Cannot make folder: ' + folder)
+
+        self.mkdir_raw(self._get_full_path(folder))
+
+    def mkdir_raw(self, folder: str):
+        """ same as mkdir but with base_path prepended """
+        raise NotImplementedError()
+
+    def is_dir(self, folder: str) -> bool:
+        return self.is_dir_raw(self._get_full_path(folder))
+
+    def is_dir_raw(self, folder: str) -> bool:
+        """ Same as is_dir, but prepended with base_path """
+        raise NotImplementedError()
+
     def __setitem__(self, key: str, value):
-        """
-        Set data from the DB based on key
+        self.set(key, value)
 
-        :param key: str:  The key to set.
-        :param value: str:  The python object
+    def set(self, key: str, value, system_obj=False):
+        if not system_obj and \
+                any(x for x in key.rsplit('/') if x.startswith('.')):
+            raise KeyError('Cannot have dot (.) prefix in path, '
+                           'got :' + key)
 
-example::
+        path = self._get_full_path(key)
+        self._cache[path] = value
 
-    db[key] = value # sets key to value
-        """
-        self._cache[key] = value
         if self.is_dbobj(value):
             self.write_dbobj(value)
         else:
-            self.set_raw(self._get_full_path(key), self._serialise(value))
+            self.set_raw(path, self._serialise(value))
 
     def get_raw(self, key: str):
         """
@@ -276,46 +171,69 @@ example::
 
         This is to be implemented by derived class.
 
-        :param key: str:  The key to get, including base_path.
+        :param key: str:  The key to delete
 
         """
         raise NotImplementedError()
 
     def delete(self, key: str):
-        """
-        Delete data from the DB based on key
+        if not self.exists(key):
+            raise KeyError('Cannot delete non-existence: ' + key)
 
-        :param key: str:  The key to get
+        if key in self._cache:
+            del self._cache[key]
 
-example::
-
-    db.delete(key) # Deletes data with key
-        """
-        del self._cache[key]
         self.delete_raw(self._get_full_path(key))
 
+    def rmdir(self, key: str):
+        if key in ['.', '/', '']:
+            raise KeyError('Directory does not exist: ' + key)
+
+        path = self._get_full_path(key)
+
+        if not self.exists_raw(path) and not self.is_dir_raw(path):
+            raise KeyError('Directory does not exist: ' + path)
+
+        try:
+            next(iter(self.list_dir(key, page_size=1)))
+            raise KeyError(f'Directory {key} is not empty')
+        except StopIteration:
+            self.rmdir_raw(path)
+
+    def rmdir_raw(self, key: str):
+        """ same as rmdir but with base_path prepended """
+        raise NotImplementedError()
+
+    def list_dir(self, folder: str, include_dir=True, page_size=200):
+        return self.list_dir_raw(
+            self._get_full_path(folder), include_dir, page_size)
+
+    def list_dir_raw(self, folder: str, include_dir: bool, page_size: int):
+        """ Same as list_dir but with base_path prepended to folder """
+        raise NotImplementedError()
+
+    def ls(self, folder: str, include_dir=True):
+        return list(self.list_dir(folder, include_dir))
+
+    def rm_tree(self, key: str):
+        if not self.is_dir(key):
+            raise KeyError('{} is not a directory'.format(key))
+
+        folder = self._ensure_slashes(key)
+        objs = list(self.list_dir(key))
+        for obj in objs:
+            path = folder + obj
+            if obj.endswith('/'):
+                self.rm_tree(path)
+            else:
+                self.delete(path)
+
+        self.rmdir(key)
+
     def new(self, class_name: str, key: str, **kwargs):
-        """
-        Create a new object on the DB.
-        The object is not persisted until obj.write() is called.
-
-        :param class_name: str: name of the class.
-                                This name must be in the config registry
-        :param key: str: The key to persist on the DB
-        :param kwargs: the stored attributes to set on the obj
-        :returns: an obj of type defined by class_name
-
-example::
-
-    obj = db.new('MyClass', key, foo=3)
-        """
         return self.db_obj_new(class_name, key, kwargs)
 
-    def cache_context(self) -> IDB:
-        """ returns the cache context
-
-        See :ref:`Cache Context`
-        """
+    def cache_context(self) -> KYDBInterface:
         return cache_context(self)
 
     def __repr__(self):
@@ -325,3 +243,19 @@ example::
         i.e. <kydb.RedisDB redis://my-redis-host/source>
         """
         return f'<{type(self).__name__} {self.url}>'
+
+    @staticmethod
+    def _ensure_slashes(s: str):
+        """Ensures s starts with / and ends with /
+
+        :param s: The string to pass in
+
+        Add slash in front or behind if needed
+        """
+        if not s.endswith('/'):
+            s += '/'
+
+        if not s.startswith('/'):
+            s = '/' + s
+
+        return s

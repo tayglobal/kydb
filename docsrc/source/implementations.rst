@@ -3,12 +3,27 @@
 DB Implementations
 ==================
 
+S3
+--
+
+::
+
+    db = kydb.connect('s3://my-kydb-bucket')
+
 DynamoDB
 --------
 
 ::
 
     db = kydb.connect('dynamodb://kydb')
+    
+.. note::
+
+    The dynamodb must have:
+    
+    #. ``path`` as primary key
+    #. An index ``folder-index`` with partition key ``folder``
+
 
 Redis
 -----
@@ -21,20 +36,13 @@ Or simply::
 
     db = kydb.connect('redis://cache.epythoncloud.io')
 
-S3
---
-
-::
-
-    db = kydb.connect('s3://my-kydb-bucket')
-
 In-Memory
 ---------
 
 ::
 
     db = kydb.connect('memory://cache001')
-
+    
 HTTP/HTTPS
 ----------
 

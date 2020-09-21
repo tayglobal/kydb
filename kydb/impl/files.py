@@ -1,6 +1,7 @@
 from kydb.base import BaseDB
 import pathlib
 import os
+import os.path
 
 
 class FileDB(BaseDB):
@@ -23,6 +24,10 @@ class FileDB(BaseDB):
             return open(self._get_fs_path(key), 'rb').read()
         except FileNotFoundError:
             raise KeyError(key)
+
+    def mkdir_raw(self, folder: str):
+        folder = self._get_fs_path(folder)
+        pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 
     def set_raw(self, key: str, value):
         """
@@ -55,3 +60,34 @@ class FileDB(BaseDB):
 
     def _get_fs_path(self, key: str):
         return '/' + self.db_name + key
+
+    def is_dir_raw(self, folder: str) -> bool:
+        """ Is this a directory?
+
+        :param folder: Returns True if is directory
+        """
+        path = self._get_fs_path(folder)
+        return os.path.isdir(path)
+
+    def list_dir_raw(self, folder: str, include_dir: bool, page_size: int):
+        folder = self._get_fs_path(folder)
+        try:
+            for filename in os.listdir(folder):
+                path = self._ensure_slashes(folder) + filename
+                if os.path.isdir(path):
+                    if include_dir:
+                        yield filename + '/'
+                else:
+                    yield filename
+        except FileNotFoundError:
+            raise KeyError(folder)
+
+    def rmdir_raw(self, folder: str):
+        try:
+            os.rmdir(self._get_fs_path(folder))
+        except OSError:
+            raise KeyError('Cannot remove folder: ' + folder)
+
+    def exists_raw(self, key) -> bool:
+        path = self._get_fs_path(key)
+        return os.path.exists(path) and not os.path.isdir(path)

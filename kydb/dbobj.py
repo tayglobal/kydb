@@ -140,7 +140,6 @@ class DbObj:
         self.db[self.key] = self
 
     def delete(self):
-        print('++== deleteing ' + self.key)
         self.db.delete(self.key)
 
 

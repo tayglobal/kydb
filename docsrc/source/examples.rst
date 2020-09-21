@@ -50,6 +50,45 @@ Any pickleable object can be stored in the KYDB::
     db[key] = val
     
     assert db.read(key, reload=True) == val
+    
+
+Object Hierarchy
+================
+
+Document-oriented databases typically does not have a concept of filesystem-like hierarchy.
+Depending on the implementation there are ways to emulate the behavior.
+There may even be needs for some meta data objects to support the idea of an empty folder.
+We will not go into these implementation details here. However the below demonstrates the API.
+
+An empty folder can be created using ``mkdir``:
+
+::
+
+    db.mkdir('/empty-folder')
+    db.ls('/') # returns ['empty-folder/']
+
+If an object is inserted inside some folder hierarchy, the folders would be created:
+
+::
+
+    db['/foo/bar/baz'] = 123
+    db.ls('/') # returns ['empty-folder/', 'foo/']
+    db.ls('/foo') # returns ['bar/'] 
+    
+
+``rmdir`` can be used to remove an empty folder:
+
+::
+
+    db.rmdir('/empty-folder')
+    db.ls('/') # returns ['foo/']
+   
+To recursively remove all contents of a folder similar to the UNIX command ``rm -rf`` use ``rm_tree``:
+
+::
+
+    db.rm_tree('/foo')
+    db.ls('/') # []
 
 Python Object DB
 ================
