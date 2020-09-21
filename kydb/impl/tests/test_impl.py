@@ -23,10 +23,10 @@ MARK_PARAMS = list(product(ALL_DB_TYPES, BASE_PATHS))
 
 DB_URLS = {
     'memory': 'memory://cache001',
-    's3': 's3://' + os.environ.get('KINYU_UNITTEST_S3_BUCKET'),
+    's3': 's3://' + os.environ.get('KINYU_UNITTEST_S3_BUCKET', ''),
     'redis': 'redis://{}:6379'.format(
-        os.environ.get('KINYU_UNITTEST_REDIS_HOST')),
-    'dynamodb': 'dynamodb://' + os.environ.get('KINYU_UNITTEST_DYNAMODB'),
+        os.environ.get('KINYU_UNITTEST_REDIS_HOST', '')),
+    'dynamodb': 'dynamodb://' + os.environ.get('KINYU_UNITTEST_DYNAMODB', ''),
     'files': 'files:/' + gettempdir() + '/kydb_tests',
 }
 
