@@ -77,7 +77,7 @@ Connecting::
 OR::
 
     db = kydb.connect('redis://hotfixes.epythoncloud.io;'
-                      '6379;dynamodb://my-prod-src-db')
+                      'dynamodb://my-prod-src-db')
 
 Reading and writing::
 
