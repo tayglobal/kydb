@@ -178,6 +178,9 @@ Now let's persist it and read it back.
 
 ::
 
+    db[key] = greeter
+    
+    # read it back, dictionary format:
     mary = db[key]
     # Still returns 1 because of cache.
     mary.greet_count # Returns 1
