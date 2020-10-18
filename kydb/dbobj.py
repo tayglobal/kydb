@@ -22,7 +22,7 @@ class StoredValue:
         self._value = None
 
     def get_default(self, obj):
-        return self._default_func(obj)
+        return self._default_func()
 
     def setvalue(self, value):
         """Set the value
@@ -84,8 +84,11 @@ class DbObj:
         self.db = db
         self.key = key
 
-        self._stored_attrs = [x for x in dir(self) if isinstance(
-            getattr(self, x), StoredValue)]
+        self._stored_attrs = [x for x in dir(self) if
+                              is_marked_as_stored_value(getattr(self, x))]
+
+        for attr in self._stored_attrs:
+            setattr(self, attr, StoredValue(getattr(self, attr)))
 
         setattr(self, IS_DB_OBJ, True)
 
@@ -143,5 +146,10 @@ class DbObj:
         self.db.delete(self.key)
 
 
+def is_marked_as_stored_value(f):
+    return hasattr(f, '_marked_as_stored_value')
+
+
 def stored(f):
-    return StoredValue(f)
+    f._marked_as_stored_value = True
+    return f
