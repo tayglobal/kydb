@@ -1,4 +1,5 @@
 from kydb.base import BaseDB
+import requests
 
 
 class HttpDB(BaseDB):
