@@ -27,3 +27,4 @@ You would need to set the following environment variables:
  
  * ``KINYU_UNITTEST_REDIS_HOST``: host of the redis server. Can also end with :port if non standard port. i.e. redis-host:8765
 
+If doing automated test, i.e. Github action, set ``IS_AUTOMATED_UNITTEST``. This would skip tests that requires external dbs.
