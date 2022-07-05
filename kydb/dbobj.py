@@ -95,7 +95,7 @@ class DbObj:
         for attr in self._stored_attrs:
             sv = getattr(self, attr)
             v = kwargs.get(attr)
-            if not v:
+            if v is None:
                 v = sv.get_default(self)
 
             sv.setvalue(v)
