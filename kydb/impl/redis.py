@@ -31,9 +31,10 @@ class RedisDB(FolderMetaMixin, BaseDB):
     def _get_password(self):
         pwd_cfg = self._config['password']
         assert pwd_cfg['encryption-method'] == 'kms', "Currently only KMS is supported for encryption-method."
-        return self._get_secret_from_kms(pwd_cfg['env'], pwd_cfg['encryption-key'])
+        return self._get_secret_from_kms(pwd_cfg['env_var'], pwd_cfg['encryption-key'])
 
-    def _get_secret_from_kms(self, name, kms_key_id: str):
+    @staticmethod
+    def _get_secret_from_kms(name, kms_key_id: str):
         kms = boto3.client('kms')
         encrypted = os.environ[name]
         res = kms.decrypt(
@@ -41,6 +42,14 @@ class RedisDB(FolderMetaMixin, BaseDB):
             CiphertextBlob=base64.b64decode(encrypted))
 
         return res['Plaintext'].decode()
+
+    @staticmethod
+    def encrypt_secret(secret: str, kms_key_id: str):
+        kms = boto3.client('kms')
+        res = kms.encrypt(
+            KeyId=kms_key_id,
+            Plaintext=secret)
+        return base64.b64encode(res['CiphertextBlob'])
 
     @staticmethod
     def _get_connection_from_dbname(db_name: str):

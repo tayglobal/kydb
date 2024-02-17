@@ -108,6 +108,9 @@ class BaseDB(ObjDBMixin, KYDBInterface):
         else:
             self._cache = {}
 
+    def clear_cache(self):
+        self._cache = {}
+
     def read(self, key: str, reload=False):
         """ Implements read in KYDBInterface """
         path = self._get_full_path(key)

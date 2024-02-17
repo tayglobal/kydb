@@ -4,6 +4,6 @@ dbs:
     host: my-redis-host
     port: 1234
     password:
-      env: KYDB_REDIS_PASSWORD
+      env_var: KYDB_REDIS_PASSWORD
       encryption-method: kms
       encryption-key: abcd1234-a123-456a-a12b-a123b4cd56ef

@@ -7,5 +7,6 @@ kydb.egg-info/
 .env
 .venv
 settings.json
+db.yml
 **/.~c9_invoke_*
 **/.*.swp
