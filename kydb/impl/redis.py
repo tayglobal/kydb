@@ -2,6 +2,9 @@ from kydb.base import BaseDB
 from kydb.folder_meta import FolderMetaMixin
 from redis.exceptions import ResponseError
 import redis
+import boto3
+import os
+import base64
 
 
 class RedisDB(FolderMetaMixin, BaseDB):
@@ -12,8 +15,35 @@ class RedisDB(FolderMetaMixin, BaseDB):
         self.connection = redis.Redis(
             **self._get_connection_kwargs(self.db_name))
 
+    def _get_connection_kwargs(self, db_name: str):
+        if self._config:
+            password = self._get_password()
+            host = self._config['host']
+            port = self._config['port']
+            return {
+                'host': host,
+                'port': port,
+                'password': password,
+            }
+
+        return self._get_connection_from_dbname(db_name)
+
+    def _get_password(self):
+        pwd_cfg = self._config['password']
+        assert pwd_cfg['encryption-method'] == 'kms', "Currently only KMS is supported for encryption-method."
+        return self._get_secret_from_kms(pwd_cfg['env'], pwd_cfg['encryption-key'])
+
+    def _get_secret_from_kms(self, name, kms_key_id: str):
+        kms = boto3.client('kms')
+        encrypted = os.environ[name]
+        res = kms.decrypt(
+            KeyId=kms_key_id,
+            CiphertextBlob=base64.b64decode(encrypted))
+
+        return res['Plaintext'].decode()
+
     @staticmethod
-    def _get_connection_kwargs(db_name: str):
+    def _get_connection_from_dbname(db_name: str):
         if ':' in db_name:
             host, port = db_name.split(':')
             kwargs = {

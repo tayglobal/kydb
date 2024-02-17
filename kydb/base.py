@@ -1,8 +1,11 @@
 import pickle
 from typing import Tuple
+import os
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
 from .interface import KYDBInterface
+from typing import Optional
+import yaml
 
 
 class BaseDB(ObjDBMixin, KYDBInterface):
@@ -11,8 +14,17 @@ class BaseDB(ObjDBMixin, KYDBInterface):
     def __init__(self, url: str):
         self.db_type = url.split(':', 1)[0]
         self.db_name, self.base_path = self._get_name_and_basepath(url)
+        self._config = self._get_config()
         self.url = url
         self._cache = {}
+
+    def _get_config(self) -> Optional[dict]:
+        config_path = os.environ.get('KYDB_CONFIG_PATH')
+        if config_path:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+
+            return config['dbs'].get(self.db_name)
 
     @staticmethod
     def _get_name_and_basepath(url: str) -> Tuple[str, str]:
