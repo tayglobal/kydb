@@ -9,7 +9,8 @@ def test_conneciton_from_config(mock_func):
         os.sep, 1)[0] + '/test_redis_config.yml'
     kms_key = 'abcd1234-a123-456a-a12b-a123b4cd56ef'
     db = kydb.connect("redis://my-redis-db")
-    print("Hello")
-    print(db._config)
     mock_func.assert_called_once_with('KYDB_REDIS_PASSWORD', kms_key)
-    assert True
+    kwargs = db._get_connection_kwargs(db.db_name)
+    assert kwargs['host'] == 'my-redis-host'
+    assert kwargs['port'] == 1234
+    assert kwargs['password'] == 'my-pretend-password'

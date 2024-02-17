@@ -5,6 +5,7 @@ dist/
 docs/
 kydb.egg-info/
 .env
+.venv
 settings.json
 **/.~c9_invoke_*
 **/.*.swp
