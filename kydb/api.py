@@ -16,7 +16,6 @@ def connect(url: str) -> KYDBInterface:
 
 
 def _connect(url: str) -> BaseDB:
-    global _db_cache
     if url not in _db_cache:
         db_cls = _resolve_db_class(url)
         _db_cache[url] = db_cls(url)
