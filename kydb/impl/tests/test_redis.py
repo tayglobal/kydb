@@ -3,6 +3,7 @@ from unittest.mock import patch
 from unittest import skipIf
 import os
 
+
 @patch(
     "kydb.impl.redis.RedisDB._get_secret_from_kms", return_value="my-pretend-password"
 )
@@ -29,7 +30,7 @@ def test_conneciton_from_config(mock_get_secret):
 @skipIf(
     "IS_AUTOMATED_UNITTEST" in os.environ, "Automated test does not have redit setup"
 )
-def test_redis():
+def test_real_redis():
     """Only run this if you have a redis environment setup
 
         You'll need to setup an env var $KYDB_CONFIG_PATH which points to a yaml file with the content
@@ -45,6 +46,10 @@ def test_redis():
         Once you have the encrypted password, you can put it in your environment variable and run the test.
     """
     db = kydb.connect("redis://real-redis-db")
-    db["/test_key"] = "test-value"
+    folder = "/test_folder"
+    db[f"{folder}/foo"] = 123
+    db[f"{folder}/bar"] = 234
     db.clear_cache()
-    assert db["/test_key"] == "test-value"
+    actual = [db[f"{folder}/{x}"] for x in db.ls(folder)]
+    expected = [123, 234]
+    assert actual == expected
