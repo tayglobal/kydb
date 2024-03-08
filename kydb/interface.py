@@ -268,3 +268,12 @@ example::
     })
         """
         raise NotImplementedError()
+
+    def clear_cache(self):
+        """Clear the cache
+
+        This is useful when you want to clear the cache from memory
+
+        Note: This is different to CacheDB where the cache is a database
+        """
+        raise NotImplementedError()

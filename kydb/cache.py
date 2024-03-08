@@ -1,9 +1,10 @@
 from .base import BaseDB
 from .interface import KYDBInterface
 from contextlib import ExitStack
+from .objdb import ObjDBMixin, DBOBJ_CONFIG_PATH
 
 
-class CacheDB(KYDBInterface):
+class CacheDB(KYDBInterface, ObjDBMixin):
     """CacheDB
     """
 
@@ -81,8 +82,7 @@ class CacheDB(KYDBInterface):
         self.persist_db.rm_tree(key)
 
     def new(self, class_name: str, key: str, **kwargs):
-        # TODO
-        ...
+        return self.db_obj_new(class_name, key, kwargs)
 
     def exists(self, key) -> bool:
         """Check if a key exists in either cache_db or persist_db"""
@@ -122,3 +122,31 @@ class CacheDB(KYDBInterface):
         self.cache_db.upload_objdb_config(objdb_config)
         self.persist_db.upload_objdb_config(objdb_config)
 
+    def _get_dbobj_config(self, class_name: str):
+        if not self.cache_db.exists(DBOBJ_CONFIG_PATH):
+            self.cache_db.upload_objdb_config(
+                self.persist_db[DBOBJ_CONFIG_PATH])
+
+        return super()._get_dbobj_config(class_name)
+
+    def clear_cache(self):
+        """Clear the cache
+
+        This is useful when you want to clear the cache from memory
+
+        Note: This is different to CacheDB where the cache is a database
+        """
+        self.cache_db.clear_cache()
+        self.persist_db.clear_cache()
+
+    def set_raw(self, key: str, value):
+        """
+        Set data from the DB based on key.
+
+        It will set it both on cache_db and persist_db
+
+        :param key: str:  The key to set, including base_path.
+        :param value: The raw, pickled data.
+        """
+        self.persist_db.set_raw(key, value)
+        self.cache_db.set_raw(key, value)
