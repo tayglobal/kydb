@@ -1,8 +1,8 @@
-# TODO: Move this into a test directory
 import kydb
 from kydb.cache import CacheDB
 import pytest
 from kydb.tests.test_objdb import DBOBJ_CONFIG, Greeter
+from kydb.objdb import DBOBJ_CONFIG_PATH
 
 
 @pytest.fixture
@@ -60,6 +60,7 @@ def test_dbobj(database_set):
     # First test db.upload_objdb_config,
     # should upload to both cache_db and persist_db
     db.upload_objdb_config(DBOBJ_CONFIG)
+
     assert isinstance(persist_db.new(class_name, key1), Greeter)
     assert isinstance(cache_db.new(class_name, key1), Greeter)
     greeter = db.new(class_name, key1)
@@ -78,10 +79,12 @@ def test_dbobj(database_set):
     greeter.write()
     assert [folder + x for x in db.ls(folder)] == [key1, key2]
 
-    # test clear cache
-    # TODO: Check why cache_db._keys() looks like the below
-    # dict_keys(['/.configs/objdb', '.configs/objdb', '/test_dbobj/greeter001', '/test_dbobj/greeter002'])
+    # Check in-memory cache
+    expected = [DBOBJ_CONFIG_PATH, key1, key2]
+    assert list(cache_db._cache.keys()) == expected
+    assert list(persist_db._cache.keys()) == expected
     print(cache_db._cache.keys())
+    print(persist_db._cache.keys())
 
     # Test cache db blown away, data should still be available from persist db
     cache_db.get_cache().clear()
@@ -100,3 +103,10 @@ def test_dbobj(database_set):
     assert isinstance(db[key1], Greeter)
     db.exists(key2)
     assert isinstance(db[key2], Greeter)
+
+    # Test clear_cache
+    assert db.persist_db._cache != {}
+    assert db.cache_db._cache != {}
+    db.clear_cache()
+    assert db.persist_db._cache == {}
+    assert db.cache_db._cache == {}
