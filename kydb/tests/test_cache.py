@@ -1,19 +1,14 @@
 import kydb
 from kydb.cache import CacheDB
-import pytest
 from kydb.tests.test_objdb import DBOBJ_CONFIG, Greeter
 from kydb.objdb import DBOBJ_CONFIG_PATH
 
 
-@pytest.fixture
-def database_set():
-    cache_db = kydb.connect('memory://cache')
-    persist_db = kydb.connect('memory://persist')
-    return CacheDB(cache_db, persist_db), cache_db, persist_db
+def test_simple_datatype():
+    cache_db = kydb.connect('memory://cache1')
+    persist_db = kydb.connect('memory://persist1')
+    db = CacheDB(cache_db, persist_db)
 
-
-def test_simple_datatype(database_set):
-    db, cache_db, persist_db = database_set
     folder = '/test_simple_datatype/'
     key1 = folder + 'foo'
     val1 = 'hello'
@@ -50,8 +45,10 @@ def test_simple_datatype(database_set):
     assert cache_db[key1] == val1
 
 
-def test_dbobj(database_set):
-    db, cache_db, persist_db = database_set
+def test_dbobj():
+    cache_db = kydb.connect('memory://cache2')
+    persist_db = kydb.connect('memory://persist2')
+    db = CacheDB(cache_db, persist_db)
     folder = '/test_dbobj/'
     key1 = folder + 'greeter001'
     key2 = folder + 'greeter002'
