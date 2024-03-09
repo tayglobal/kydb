@@ -2,6 +2,7 @@ from .config import DB_MODULES
 from .base import BaseDB
 from .interface import KYDBInterface
 from .union import UnionDB
+from .cache import CacheDB
 import importlib
 
 
@@ -9,6 +10,13 @@ _db_cache = {}
 
 
 def connect(url: str) -> KYDBInterface:
+    if "|" in url:
+        dbs = [_connect(x) for x in url.split("|")]
+        if len(dbs) != 2:
+            raise ValueError("CacheDB expects exactly 2 databases")
+
+        return CacheDB(*dbs)
+
     dbs = [_connect(x) for x in url.split(";")]
     if len(dbs) == 1:
         return dbs[0]
