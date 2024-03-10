@@ -5,11 +5,11 @@
             "name": "Python: debug pytest",
             "type": "debugpy",
             "request": "launch",
-            // "module": "pytest ${file}",
-            "module": "pytest kydb/tests/test_cache.py",
+            "module": "pytest ${file}",
+            // "module": "pytest kydb/impl/tests/test_redis.py",
             "console": "integratedTerminal",
-            // "args": "${command:pickArgs}"
-            "args": "-k test_dbobj -s"
+            "args": "${command:pickArgs}"
+            // "args": "-k test_conneciton_from_config_plain -s"
         }
     ]
 }
