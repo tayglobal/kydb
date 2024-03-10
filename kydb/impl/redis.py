@@ -30,8 +30,14 @@ class RedisDB(FolderMetaMixin, BaseDB):
 
     def _get_password(self):
         pwd_cfg = self._config['password']
-        assert pwd_cfg['encryption-method'] == 'kms', "Currently only KMS is supported for encryption-method."
-        return self._get_secret_from_kms(pwd_cfg['env_var'], pwd_cfg['encryption-key'])
+        encrypt_method = pwd_cfg['encryption-method']
+        if encrypt_method == 'kms':
+            return self._get_secret_from_kms(pwd_cfg['env_var'], pwd_cfg['encryption-key'])
+
+        if encrypt_method == 'plain':
+            return os.environ[pwd_cfg['env_var']]
+
+        raise ValueError(f'Unknown encryption method: {encrypt_method}')
 
     @staticmethod
     def _get_secret_from_kms(name, kms_key_id: str):
