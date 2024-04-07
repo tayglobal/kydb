@@ -1,6 +1,7 @@
 import kydb
 from kydb.tests.test_objdb import DBOBJ_CONFIG, Greeter
 from kydb.objdb import DBOBJ_CONFIG_PATH
+from kydb.cache import CacheDB
 
 
 def test_simple_datatype():
@@ -102,3 +103,31 @@ def test_dbobj():
     db.clear_cache()
     assert db.persist_db._cache == {}
     assert db.cache_db._cache == {}
+
+
+def test_dbobj_db():
+    """Test that reading key 1 has the db set to the CacheDB
+    This is to make sure that we don't either have
+    db.cache_db or db.persist_db as greeter.db"""
+    db = kydb.connect('memory://cache3|memory://persist3')
+    folder = '/test_dbobj/'
+    key1 = folder + 'greeter001'
+    class_name = 'Greeter'
+
+    # First test db.upload_objdb_config,
+    # should upload to both cache_db and persist_db
+    db.upload_objdb_config(DBOBJ_CONFIG)
+
+    greeter = db.new(class_name, key1)
+    greeter.write()
+
+    # Test when reading from _cache
+    assert db[key1].db == db
+
+    # Test when reading from cache_db
+    db.clear_cache()
+    assert db[key1].db == db
+
+    # Test when reading from persist_db
+    db.cache_db.delete(key1)
+    assert db[key1].db == db

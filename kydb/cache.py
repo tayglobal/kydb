@@ -2,6 +2,7 @@ from .base import BaseDB
 from .interface import KYDBInterface
 from contextlib import ExitStack
 from .objdb import ObjDBMixin, DBOBJ_CONFIG_PATH
+from .dbobj import DbObj
 
 
 class CacheDB(KYDBInterface, ObjDBMixin):
@@ -100,10 +101,17 @@ class CacheDB(KYDBInterface, ObjDBMixin):
         If it does not exist, get it from the persist_db
         and then write it to the cache_db
         """
-        if self.cache_db.exists(key):
-            return self.cache_db[key]
 
-        item = self.persist_db[key]
+        def _ensure_db(obj):
+            if isinstance(obj, DbObj):
+                obj.db = self
+
+            return obj
+
+        if self.cache_db.exists(key):
+            return _ensure_db(self.cache_db[key])
+
+        item = _ensure_db(self.persist_db[key])
         self.cache_db[key] = item
 
         return item
