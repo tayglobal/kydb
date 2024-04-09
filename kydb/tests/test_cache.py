@@ -76,8 +76,6 @@ def test_dbobj():
     expected = [DBOBJ_CONFIG_PATH, key1, key2]
     assert list(db.cache_db._cache.keys()) == expected
     assert list(db.persist_db._cache.keys()) == expected
-    print(db.cache_db._cache.keys())
-    print(db.persist_db._cache.keys())
 
     # Test cache db blown away, data should still be available from persist db
     db.cache_db.get_cache().clear()
@@ -130,4 +128,22 @@ def test_dbobj_db():
 
     # Test when reading from persist_db
     db.cache_db.delete(key1)
+    assert not db.cache_db.exists(key1)
     assert db[key1].db == db
+
+    # Now check that we actually have persisted it in cache_db
+    db.cache_db.clear_cache()
+    assert db.cache_db.exists(key1)
+
+
+def test_objdb_config_cache_miss():
+    db = kydb.connect('memory://cache4|memory://persist4')
+    folder = '/test_dbobj/'
+    key1 = folder + 'greeter001'
+    class_name = 'Greeter'
+
+    # Only upload to persist db to simulate cache miss
+    db.persist_db.upload_objdb_config(DBOBJ_CONFIG)
+
+    greeter = db.new(class_name, key1)
+    assert greeter.db == db
