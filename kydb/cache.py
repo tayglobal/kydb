@@ -3,6 +3,7 @@ from .interface import KYDBInterface
 from contextlib import ExitStack
 from .objdb import ObjDBMixin, DBOBJ_CONFIG_PATH
 from .dbobj import DbObj
+import pickle
 
 
 class CacheDB(KYDBInterface, ObjDBMixin):
@@ -109,6 +110,13 @@ class CacheDB(KYDBInterface, ObjDBMixin):
             return obj
 
         if self.cache_db.exists(key):
+            raw_data = self.cache_db.get_raw(key)
+
+            data = pickle.loads(raw_data)
+            if self.is_data_dbobj(data):
+                m = data['meta']
+                return self.db_obj_new(m['class_name'], m['key'], data['data'])
+
             return _ensure_db(self.cache_db[key])
 
         item = _ensure_db(self.persist_db[key])

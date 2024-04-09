@@ -142,8 +142,14 @@ def test_objdb_config_cache_miss():
     key1 = folder + 'greeter001'
     class_name = 'Greeter'
 
-    # Only upload to persist db to simulate cache miss
-    db.persist_db.upload_objdb_config(DBOBJ_CONFIG)
+    db.upload_objdb_config(DBOBJ_CONFIG)
 
     greeter = db.new(class_name, key1)
-    assert greeter.db == db
+    greeter.write()
+
+    # Delete the config: /.configs/objdb in cache_db
+    db.cache_db.delete_raw('/.configs/objdb')
+
+    #  Check that we can still read key1
+    db.clear_cache()
+    assert db[key1].db == db
