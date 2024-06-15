@@ -1,4 +1,3 @@
 boto3
-redis
 requests
 pyyaml
