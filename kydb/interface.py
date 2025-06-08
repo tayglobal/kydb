@@ -71,28 +71,28 @@ i.e. the below are illegal and would raise KeyError
     def list_dir(self, folder: str, include_dir=True, page_size=200):
         """ List the folder
 
-        :param folder: The folder to lsit
+        :param folder: The folder to list
         :parm include_dir: include subfolders
         :parm page_size: The number of items to fetch at a time from DB
                          The result would be identical, only controls
                          performance
 
         Note Folders always ends with ``/``
-        Objects does not
+        Objects do not
         """
         raise NotImplementedError()
 
     def ls(self, folder: str, include_dir=True):
         """ Similar to list_dir, but returns a list (not generator)
 
-        :param folder: The folder to lsit
+        :param folder: The folder to list
         :parm include_dir: include subfolders
         :parm page_size: The number of items to fetch at a time from DB
                          The result would be identical, only controls
                          performance
 
         Note Folders always ends with ``/``
-        mbjects does not
+        objects do not
         """
         raise NotImplementedError()
 
