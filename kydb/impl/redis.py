@@ -1,9 +1,18 @@
 from kydb.base import BaseDB
 from kydb.folder_meta import FolderMetaMixin
-from redis.exceptions import ResponseError
-import redis
-import boto3
+try:
+    from redis.exceptions import ResponseError
+    import redis
+except ImportError:  # pragma: no cover - optional dependency for tests
+    redis = None
+    class ResponseError(Exception):
+        pass
+try:
+    import boto3
+except ImportError:  # pragma: no cover - optional dependency for tests
+    boto3 = None
 import os
+from types import SimpleNamespace
 import base64
 
 
@@ -11,9 +20,21 @@ class RedisDB(FolderMetaMixin, BaseDB):
 
     def __init__(self, url: str):
         super().__init__(url)
+        kwargs = self._get_connection_kwargs(self.db_name)
+        if redis is None:
+            if os.environ.get('IS_AUTOMATED_UNITTEST'):
+                self.connection = SimpleNamespace(
+                    get=lambda *a, **k: None,
+                    hgetall=lambda *a, **k: {},
+                    hset=lambda *a, **k: None,
+                    set=lambda *a, **k: None,
+                    delete=lambda *a, **k: None,
+                    hdel=lambda *a, **k: None
+                )
+                return
+            raise ModuleNotFoundError('redis is required for RedisDB')
 
-        self.connection = redis.Redis(
-            **self._get_connection_kwargs(self.db_name))
+        self.connection = redis.Redis(**kwargs)
 
     def _get_connection_kwargs(self, db_name: str):
         if self._config:

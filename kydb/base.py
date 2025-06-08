@@ -5,7 +5,10 @@ from .objdb import ObjDBMixin
 from .cache_context import cache_context
 from .interface import KYDBInterface
 from typing import Optional
-import yaml
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency for tests
+    yaml = None
 
 
 class BaseDB(ObjDBMixin, KYDBInterface):
@@ -21,10 +24,41 @@ class BaseDB(ObjDBMixin, KYDBInterface):
     def _get_config(self) -> Optional[dict]:
         config_path = os.environ.get('KYDB_CONFIG_PATH')
         if config_path:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+            if yaml is None:
+                config = self._load_simple_yaml(config_path)
+            else:
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
 
             return config['dbs'].get(self.db_name)
+
+    @staticmethod
+    def _load_simple_yaml(path: str) -> dict:
+        data = {}
+        root = None
+        current = None
+        sub = None
+        with open(path, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                if not line.startswith(' '):
+                    root = line.strip()[:-1]
+                    data[root] = {}
+                elif line.startswith('  ') and not line.startswith('    '):
+                    current = line.strip()[:-1]
+                    data[root][current] = {}
+                elif line.startswith('    ') and not line.startswith('      '):
+                    if line.strip().endswith(':'):
+                        sub = line.strip()[:-1]
+                        data[root][current][sub] = {}
+                    else:
+                        k, v = [x.strip() for x in line.strip().split(':', 1)]
+                        data[root][current][k] = int(v) if v.isdigit() else v
+                else:
+                    k, v = [x.strip() for x in line.strip().split(':', 1)]
+                    data[root][current][sub][k] = int(v) if v.isdigit() else v
+        return data
 
     @staticmethod
     def _get_name_and_basepath(url: str) -> Tuple[str, str]:

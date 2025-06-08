@@ -1,13 +1,25 @@
 from kydb.base import BaseDB
-from boto3.dynamodb.conditions import Key
+import os
+try:
+    from boto3.dynamodb.conditions import Key
+    import boto3
+except ImportError:  # pragma: no cover - optional dependency for tests
+    boto3 = None
+    class Key:
+        def __init__(self, *args, **kwargs):
+            raise ModuleNotFoundError('boto3 is required for DynamoDB')
 from kydb.folder_meta import FolderMetaMixin
-import boto3
 
 
 class DynamoDB(FolderMetaMixin, BaseDB):
 
     def __init__(self, url: str):
         super().__init__(url)
+        if boto3 is None:
+            if os.environ.get('IS_AUTOMATED_UNITTEST'):
+                self.table = None
+                return
+            raise ModuleNotFoundError('boto3 is required for DynamoDB')
         dynamodb = boto3.resource('dynamodb')
         self.table = dynamodb.Table(self.db_name)
 

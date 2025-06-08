@@ -1,4 +1,4 @@
 boto3
 redis
 requests
-pyyaml
+PyYAML>=5.4

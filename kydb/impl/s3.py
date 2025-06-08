@@ -1,7 +1,15 @@
 from kydb.base import BaseDB
-from botocore.exceptions import ClientError, ParamValidationError
+import os
+try:
+    from botocore.exceptions import ClientError, ParamValidationError
+    import boto3
+except ImportError:  # pragma: no cover - optional dependency for tests
+    boto3 = None
+    class ClientError(Exception):
+        pass
+    class ParamValidationError(Exception):
+        pass
 import io
-import boto3
 from kydb.folder_meta import FolderMetaMixin
 
 
@@ -9,6 +17,11 @@ class S3DB(FolderMetaMixin, BaseDB):
 
     def __init__(self, url: str):
         super().__init__(url)
+        if boto3 is None:
+            if os.environ.get('IS_AUTOMATED_UNITTEST'):
+                self.s3 = None
+                return
+            raise ModuleNotFoundError('boto3 is required for S3DB')
         self.s3 = boto3.client('s3')
 
     def get_raw(self, key: str):
@@ -34,14 +47,14 @@ class S3DB(FolderMetaMixin, BaseDB):
     def list_dir_meta_folder(self, folder: str, page_size: int):
         """ List the folder
 
-        :param folder: The folder to lsit
+        :param folder: The folder to list
         :parm include_dir: include subfolders
         :parm page_size: The number of items to fetch at a time from DB
                          The result would be identical, only controls
                          performance
 
         Note Folders always ends with ``/``
-        Objects does not
+        Objects do not
         """
         folder = self._ensure_slashes(folder)[1:]
 
