@@ -36,4 +36,7 @@ jobs:
         python -m pytest kydb
       env:
         PYTHONPATH: .
-        IS_AUTOMATED_UNITTEST: 1
+        KYDB_TEST_LOCAL_SERVICES: s3,dynamodb,redis
+        KINYU_UNITTEST_S3_BUCKET: kydb-test
+        KINYU_UNITTEST_DYNAMODB: kydb-test-table
+        KINYU_UNITTEST_REDIS_HOST: localhost

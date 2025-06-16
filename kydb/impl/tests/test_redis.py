@@ -1,6 +1,5 @@
 import kydb
 from unittest.mock import patch
-from unittest import skipIf
 import os
 
 FAKE_REDIS_PASSWORD = "my-pretend-password"
@@ -54,9 +53,6 @@ def test_conneciton_from_config_plain():
     assert kwargs["password"] == FAKE_REDIS_PASSWORD
 
 
-@skipIf(
-    "IS_AUTOMATED_UNITTEST" in os.environ, "Automated test does not have redit setup"
-)
 def test_real_redis():
     """Only run this if you have a redis environment setup
 
