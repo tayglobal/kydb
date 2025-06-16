@@ -1,6 +1,12 @@
 import kydb
 from datetime import datetime
+import os
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    "IS_AUTOMATED_UNITTEST" in os.environ,
+    reason="Automated test does not have HTTP setup",
+)
 
 BASE_URL = 'https://files.tayglobal.com/kinyu-demo'
 

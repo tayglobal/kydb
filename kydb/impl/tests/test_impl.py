@@ -11,9 +11,18 @@ def is_automated_test() -> bool:
     return os.environ.get('IS_AUTOMATED_UNITTEST')
 
 
-ALL_DB_TYPES = ['memory', 'files', 'union'] \
-    if is_automated_test() \
-    else ['memory', 's3', 'redis', 'dynamodb', 'files', 'union']
+def get_test_db_types():
+    env_val = os.environ.get('KYDB_TEST_DB_TYPES')
+    if env_val:
+        return [x.strip() for x in env_val.split(',') if x.strip()]
+    return (
+        ['memory', 'files', 'union']
+        if is_automated_test()
+        else ['memory', 's3', 'redis', 'dynamodb', 'files', 'union']
+    )
+
+
+ALL_DB_TYPES = get_test_db_types()
 
 # ALL_DB_TYPES = ['dynamodb']
 BASE_PATHS = ['', 'with_base_path']
