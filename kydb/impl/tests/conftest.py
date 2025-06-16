@@ -14,7 +14,11 @@ def local_services():
     skipped.
     """
     services = {
-        s.strip() for s in os.environ.get("KYDB_TEST_LOCAL_SERVICES", "").split(",") if s.strip()
+        s.strip()
+        for s in os.environ.get(
+            "KYDB_TEST_LOCAL_SERVICES", "s3,dynamodb,redis"
+        ).split(",")
+        if s.strip()
     }
     if not services:
         yield
@@ -25,24 +29,26 @@ def local_services():
 
     if "s3" in services:
         try:
-            from moto import mock_s3
+            from moto import mock_aws
         except ImportError:
             missing.append("moto")
         else:
-            m = mock_s3()
+            m = mock_aws()
             stack.enter_context(m)
+            os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
             s3 = boto3.client("s3", region_name="us-east-1")
             bucket = os.environ.get("KINYU_UNITTEST_S3_BUCKET", "kydb-test")
             s3.create_bucket(Bucket=bucket)
 
     if "dynamodb" in services:
         try:
-            from moto import mock_dynamodb2
+            from moto import mock_aws
         except ImportError:
             missing.append("moto")
         else:
-            m = mock_dynamodb2()
+            m = mock_aws()
             stack.enter_context(m)
+            os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
             dynamodb = boto3.client("dynamodb", region_name="us-east-1")
             table = os.environ.get("KINYU_UNITTEST_DYNAMODB", "kydb-test-table")
             dynamodb.create_table(

@@ -7,19 +7,11 @@ from contextlib import contextmanager
 from itertools import product
 
 
-def is_automated_test() -> bool:
-    return os.environ.get('IS_AUTOMATED_UNITTEST')
-
-
 def get_test_db_types():
     env_val = os.environ.get('KYDB_TEST_DB_TYPES')
     if env_val:
         return [x.strip() for x in env_val.split(',') if x.strip()]
-    return (
-        ['memory', 'files', 'union']
-        if is_automated_test()
-        else ['memory', 's3', 'redis', 'dynamodb', 'files', 'union']
-    )
+    return ['memory', 's3', 'redis', 'dynamodb', 'files', 'union']
 
 
 ALL_DB_TYPES = get_test_db_types()
@@ -32,10 +24,10 @@ MARK_PARAMS = list(product(ALL_DB_TYPES, BASE_PATHS))
 
 DB_URLS = {
     'memory': 'memory://cache001',
-    's3': 's3://' + os.environ.get('KINYU_UNITTEST_S3_BUCKET', ''),
+    's3': 's3://' + os.environ.get('KINYU_UNITTEST_S3_BUCKET', 'kydb-test'),
     'redis': 'redis://{}:6379'.format(
-        os.environ.get('KINYU_UNITTEST_REDIS_HOST', '')),
-    'dynamodb': 'dynamodb://' + os.environ.get('KINYU_UNITTEST_DYNAMODB', ''),
+        os.environ.get('KINYU_UNITTEST_REDIS_HOST', 'localhost')),
+    'dynamodb': 'dynamodb://' + os.environ.get('KINYU_UNITTEST_DYNAMODB', 'kydb-test-table'),
     'files': 'files:/' + gettempdir() + '/kydb_tests',
 }
 
