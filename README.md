@@ -4,7 +4,7 @@ An abstraction layer for NoSQL Database with features used in the financial serv
 
  * Simple factory. A single URL would define the database or union.
  
- * Filesystem-like heirachy for objects.
+ * Filesystem-like hierarchy for objects.
  
  * Caching and cache context.
  

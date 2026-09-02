@@ -1,7 +1,33 @@
 from kydb.base import BaseDB
+from kydb.exceptions import IndexNotSupported
+from kydb.query import ScanFolderQuery
 import pathlib
 import os
 import os.path
+
+
+class FileFolderQuery(ScanFolderQuery):
+    """ Client-side scan-and-sort over the filesystem, sorted by
+    ``st_mtime_ns``. Files have no separate, portable creation-time
+    attribute that survives a rewrite (``st_ctime`` is a metadata-change
+    time, not a creation time, and is not comparable across platforms),
+    so ``ctime`` falls back to ``mtime`` here -- documented, not
+    engineered around, matching S3 below.
+    """
+
+    def _raw_entries(self):
+        folder = self._db._get_fs_path(
+            self._db._ensure_slashes(
+                self._db._get_full_path(self._folder)))
+        try:
+            for filename in os.listdir(folder):
+                path = os.path.join(folder, filename)
+                if os.path.isdir(path):
+                    continue
+                mtime_ns = os.stat(path).st_mtime_ns
+                yield filename, mtime_ns, mtime_ns
+        except FileNotFoundError:
+            raise KeyError(folder)
 
 
 class FileDB(BaseDB):
@@ -91,3 +117,22 @@ class FileDB(BaseDB):
     def exists_raw(self, key) -> bool:
         path = self._get_fs_path(key)
         return os.path.exists(path) and not os.path.isdir(path)
+
+    def folder(self, folder: str, allow_scan: bool = False) \
+            -> FileFolderQuery:
+        """ Implements folder in KYDBInterface.
+
+        FileDB has no server-side ordering index -- this is a
+        client-side scan-and-sort of the directory (via ``st_mtime``),
+        so it requires the caller to opt in with ``allow_scan=True``.
+        """
+        if not allow_scan:
+            raise IndexNotSupported(
+                f'{type(self).__name__} does not support folder()/'
+                "recent() natively; pass allow_scan=True to opt into "
+                'an O(n) client-side scan-and-sort of the folder')
+        return FileFolderQuery(self, folder, allow_scan=True)
+
+    def reindex(self, folder: str) -> int:
+        """No-op: filesystem ``st_mtime_ns`` already covers old files."""
+        return 0

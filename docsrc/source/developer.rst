@@ -27,3 +27,17 @@ You would need to set the following environment variables:
  
  * ``KINYU_UNITTEST_REDIS_HOST``: host of the redis server. Can also end with :port if non standard port. i.e. redis-host:8765
 
+To limit the database types tested you can set ``KYDB_TEST_DB_TYPES`` with a
+comma separated list such as ``dynamodb`` or ``s3,redis``.  Local in-memory
+services for ``s3``, ``dynamodb`` and ``redis`` are started automatically.  If
+you need to customise which services to run, set ``KYDB_TEST_LOCAL_SERVICES``
+with the comma separated list of services to mock.  Using local services
+requires the extra dependencies ``moto`` and ``fakeredis``.
+
+To run the tests under Codex or CI you should execute them from the project
+root::
+
+    export PYTHONPATH=.
+    pytest kydb
+
+

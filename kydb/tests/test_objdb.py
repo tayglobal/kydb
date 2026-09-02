@@ -136,3 +136,12 @@ def test_union():
     assert not db.exists(key)
     assert not db.dbs[0].exists(key)
     assert not db.dbs[1].exists(key)
+
+
+def test_multiple(db):
+    greeter1 = db.new('Greeter', '/hello-world/001', name='Tony')
+    greeter2 = db.new('Greeter', '/hello-world/002', name='Mary')
+    greeter3 = db.new('Greeter', '/hello-world/003', name='Jane')
+    assert(greeter1.greet() == 'Hello Tony')
+    assert(greeter2.greet() == 'Hello Mary')
+    assert(greeter3.greet() == 'Hello Jane')

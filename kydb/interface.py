@@ -1,4 +1,9 @@
 from abc import ABC
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - import for type checking only
+    from .query import FolderQuery
+from .exceptions import IndexNotSupported
 
 
 class KYDBInterface(ABC):
@@ -95,6 +100,99 @@ i.e. the below are illegal and would raise KeyError
         mbjects does not
         """
         raise NotImplementedError()
+
+    def folder(self, folder: str, allow_scan: bool = False) -> 'FolderQuery':
+        """ Build a lazy recency (or other index) query on a folder.
+
+        :param folder: The folder to query. Same folder-relative
+                       semantics as ``list_dir``.
+        :param allow_scan: Opt into an O(n) client-side scan-and-sort on
+                       backends with no server-side ordering index
+                       (Memory, Files, S3), and on DynamoDB when the
+                       table has no ``folder-time-index``. Ignored on
+                       Redis, which is always native, and on backends
+                       that are unsupported outright (HTTP/HTTPS), which
+                       always raise regardless of this flag.
+        :returns: A :class:`kydb.query.FolderQuery` -- a lazy, immutable
+                  query builder. Each chained call returns a new query,
+                  so the object can be safely reused/branched.
+
+        Note there is no ``include_dir`` option: directories are not
+        indexed, so recency queries only ever return objects.
+
+        Backends without a server-side ordering index raise
+        ``IndexNotSupported`` unless ``allow_scan=True`` is passed.
+
+        **Objects with no timestamp.** An object written before the
+        index existed -- or while it was switched off in config -- has
+        no recorded ``mtime``. It is still returned, reported at
+        ``mtime == ctime == 0``: after every indexed object under
+        ``desc()``, before every one under ``asc()``, and excluded by any
+        ``since(ts)`` with ``ts > 0``. No migration is needed, and each
+        such object moves into place the first time it is rewritten.
+
+        **Switching the index off.** Setting ``mtime-index: false`` in
+        the per-db kydb config stops the index being maintained on
+        write. ``folder()`` and ``recent()`` then raise
+        ``IndexNotSupported``, and ``allow_scan=True`` does not override
+        that -- with nothing recording timestamps there is nothing to
+        sort by.
+
+example::
+
+    db.folder('/my/folder').by('mtime').desc().limit(10)   # names, newest first
+    db.folder('/my/folder').by('mtime').since(ts).items()  # (name, value) pairs
+    db.folder('/my/folder').by('mtime').desc().entries()   # .key, .mtime, .ctime
+    db.folder('/my/folder', allow_scan=True).by('mtime')   # client-side scan
+
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not support folder()/recent() '
+            'recency queries (no server-side ordering index)')
+
+    def recent(self, folder: str, limit: int = None,
+               allow_scan: bool = False):
+        """ The most recently modified objects in a folder, newest first.
+
+        :param folder: The folder to query.
+        :param limit: Optionally cap the number of results.
+        :param allow_scan: Same meaning as on :meth:`folder` -- opt into
+                       an O(n) client-side scan-and-sort on backends
+                       with no server-side ordering index.
+        :returns: A lazy generator of names (``str``), newest first.
+
+        Sugar for
+        ``db.folder(folder, allow_scan=allow_scan).by('mtime').desc().limit(limit)``.
+        Raises ``IndexNotSupported`` on backends without a server-side
+        ordering index, unless ``allow_scan=True`` is passed.
+
+        See :meth:`folder` for how objects with no recorded timestamp are
+        ordered, and for the ``mtime-index`` config setting.
+
+example::
+
+    db.recent('/my/folder', limit=10)
+    db.recent('/my/folder', limit=10, allow_scan=True)
+
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not support folder()/recent() '
+            'recency queries (no server-side ordering index)')
+
+    def reindex(self, folder: str) -> int:
+        """Add missing recency timestamps to objects in ``folder``.
+
+        :param folder: The folder to reindex. Subfolders are not traversed.
+        :returns: The number of objects newly added to the recency index.
+
+        Existing ``mtime`` and ``ctime`` values are preserved. Legacy objects
+        have no recoverable write time, so this deliberately records the time
+        of reindexing. That moves them ahead of genuinely older indexed
+        objects; callers should normally keep the truthful epoch-tail
+        behaviour and use this only when migration-day ordering is preferred.
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not maintain a recency index')
 
     def delete(self, key: str):
         """
@@ -266,5 +364,14 @@ example::
             'class_name': 'Greeter'
         }
     })
+        """
+        raise NotImplementedError()
+
+    def clear_cache(self):
+        """Clear the cache
+
+        This is useful when you want to clear the cache from memory
+
+        Note: This is different to CacheDB where the cache is a database
         """
         raise NotImplementedError()

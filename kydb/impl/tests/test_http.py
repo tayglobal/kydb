@@ -1,34 +1,46 @@
 import kydb
 from datetime import datetime
 import pytest
-
-BASE_URL = 'https://files.tayglobal.com/kinyu-demo'
-
+import pickle
+import threading
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from functools import partial
 
 @pytest.fixture
-def db():
-    """
-    The fixture was prepared with this::
+def db(tmp_path):
+    base = tmp_path / "site"
+    data_dir = base / "db" / "tests"
+    data_dir.mkdir(parents=True)
 
-    with open('test_http_basic', 'w') as f:
+    with open(data_dir / "test_http_basic", "w") as f:
         f.write(pickle.dumps(123).hex())
 
     val = {
-        'my_int': 123,
-        'my_float': 123.456,
-        'my_str': 'hello',
-        'my_list': [1, 2, 3],
-        'my_datetime': datetime.now()
+        "my_int": 123,
+        "my_float": 123.456,
+        "my_str": "hello",
+        "my_list": [1, 2, 3],
+        "my_datetime": datetime(2020, 8, 30, 2, 5, 0, 580731),
     }
 
-    with open('test_http_dict', 'w') as f:
+    with open(data_dir / "test_http_dict", "w") as f:
         f.write(pickle.dumps(val).hex())
 
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
 
-    aws s3 cp test_http_basic s3://files.tayglobal.com/kinyu-demo/db/tests/
-    aws s3 cp test_http_dict s3://files.tayglobal.com/kinyu-demo/db/tests/
-    """
-    return kydb.connect(BASE_URL)
+    handler = partial(QuietHandler, directory=str(base))
+    server = ThreadingHTTPServer(("localhost", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://localhost:{server.server_port}"
+    db = kydb.connect(url)
+    try:
+        yield db
+    finally:
+        server.shutdown()
+        thread.join()
 
 
 def test_http_basic(db):
@@ -51,3 +63,21 @@ def test_http_dict(db):
         'my_datetime': datetime(2020, 8, 30, 2, 5, 0, 580731)
     }
     assert db[key] == val
+
+
+def test_http_recent_unsupported(db):
+    """HTTP/HTTPS stay unsupported outright -- there is no allow_scan
+    escape hatch (unlike memory/files/s3): read-only over plain HTTP
+    GET has no directory listing to scan in the first place.
+    """
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/db/tests')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/db/tests', allow_scan=True)
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/db/tests', limit=1)
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/db/tests', limit=1, allow_scan=True)

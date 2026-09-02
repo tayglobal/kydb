@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: debug pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest ${file}",
+            // "module": "pytest kydb/impl/tests/test_redis.py",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+            // "args": "-k test_conneciton_from_config_plain -s"
+        }
+    ]
+}

@@ -4,7 +4,7 @@ import importlib
 import pickle
 
 
-DBOBJ_CONFIG_PATH = '.configs/objdb'
+DBOBJ_CONFIG_PATH = '/.configs/objdb'
 
 
 class ObjDBMixin:

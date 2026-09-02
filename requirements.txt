@@ -1,3 +1,6 @@
 boto3
 redis
 requests
+pyyaml
+fakeredis
+moto
