@@ -20,9 +20,11 @@ DynamoDB
 .. note::
 
     The dynamodb must have:
-    
+
     #. ``path`` as primary key
     #. An index ``folder-index`` with partition key ``folder``
+    #. An index ``folder-time-index`` with partition key ``folder`` and
+       sort key ``mtime`` (Number), projected ``KEYS_ONLY``
 
 
 Redis

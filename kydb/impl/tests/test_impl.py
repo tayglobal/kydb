@@ -1,6 +1,7 @@
 from datetime import datetime
 import kydb
 import pytest
+import time
 from tempfile import gettempdir
 import os
 from contextlib import contextmanager
@@ -238,3 +239,71 @@ def test_pagination(db_type, base_path):
             set(db.list_dir('/unittests/test_list_dir/foo', page_size=1))
         assert ['obj5'] == list(db.list_dir(
             '/unittests/test_list_dir/foo/bar', page_size=1))
+
+
+# --- DynamoDB write-path tests for the additional-index feature (stage 1) ---
+#
+# These assert directly against the raw table/GSI, since the query API
+# (db.folder(...) / db.recent(...)) does not exist yet.
+
+def _require_dynamodb():
+    if 'dynamodb' not in ALL_DB_TYPES:
+        pytest.skip('dynamodb not in KYDB_TEST_DB_TYPES')
+
+
+def test_dynamodb_write_sets_mtime_and_ctime():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    key = '/unittests/test_mtime_ctime/obj'
+    try:
+        db[key] = 123
+        # contents must still round-trip correctly as Binary through
+        # update_item
+        assert db.read(key, reload=True) == 123
+
+        full_path = db._get_full_path(key)
+        item = db.table.get_item(Key={'path': full_path})['Item']
+
+        assert 'mtime' in item
+        assert 'ctime' in item
+        # on first write mtime and ctime are set to the same timestamp
+        assert item['mtime'] == item['ctime']
+    finally:
+        db.rm_tree('/unittests/test_mtime_ctime')
+
+
+def test_dynamodb_rewrite_bumps_mtime_preserves_ctime():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    key = '/unittests/test_mtime_ctime_rewrite/obj'
+    try:
+        db[key] = 1
+        full_path = db._get_full_path(key)
+        item1 = db.table.get_item(Key={'path': full_path})['Item']
+
+        # ensure a distinct time.time_ns() value on the rewrite
+        time.sleep(0.001)
+        db[key] = 2
+        item2 = db.table.get_item(Key={'path': full_path})['Item']
+
+        assert item2['mtime'] > item1['mtime']
+        assert item2['ctime'] == item1['ctime']
+    finally:
+        db.rm_tree('/unittests/test_mtime_ctime_rewrite')
+
+
+def test_dynamodb_folder_meta_has_no_mtime_or_ctime():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    try:
+        db.mkdir('/unittests/test_folder_meta_no_mtime/foo')
+        meta_path = db._get_full_path(
+            db._folder_meta_path('/unittests/test_folder_meta_no_mtime/foo/'))
+        item = db.table.get_item(Key={'path': meta_path})['Item']
+
+        assert 'mtime' not in item
+        assert 'ctime' not in item
+        assert 'folder' in item
+        assert 'contents' in item
+    finally:
+        db.rm_tree('/unittests/test_folder_meta_no_mtime')

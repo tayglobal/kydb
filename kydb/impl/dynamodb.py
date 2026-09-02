@@ -1,3 +1,4 @@
+import time
 from kydb.base import BaseDB
 from boto3.dynamodb.conditions import Key
 from kydb.folder_meta import FolderMetaMixin
@@ -22,11 +23,30 @@ class DynamoDB(FolderMetaMixin, BaseDB):
 
     def folder_meta_set_raw(self, key: str, value):
         folder = key.rsplit('/', 1)[0] + '/'
-        self.table.put_item(Item={
-            'path': key,
-            'folder': folder,
-            'contents': value
-        })
+        objname = key.rsplit('/', 1)[1]
+
+        # `folder` is a DynamoDB reserved word, so it must be referenced
+        # via an ExpressionAttributeNames placeholder rather than literally
+        # in the UpdateExpression.
+        if FolderMetaMixin._is_folder_meta(objname):
+            # Directories are excluded from the folder-time-index: no
+            # mtime/ctime is written for `.folder-*` marker records, which
+            # keeps that (sparse) GSI free of directories automatically.
+            self.table.update_item(
+                Key={'path': key},
+                UpdateExpression='SET #f=:f, contents=:c',
+                ExpressionAttributeNames={'#f': 'folder'},
+                ExpressionAttributeValues={':f': folder, ':c': value})
+        else:
+            now_ns = time.time_ns()
+            self.table.update_item(
+                Key={'path': key},
+                UpdateExpression=(
+                    'SET #f=:f, contents=:c, mtime=:t, '
+                    'ctime=if_not_exists(ctime, :t)'),
+                ExpressionAttributeNames={'#f': 'folder'},
+                ExpressionAttributeValues={
+                    ':f': folder, ':c': value, ':t': now_ns})
 
     def delete_raw(self, key: str):
         self.table.delete_item(Key={

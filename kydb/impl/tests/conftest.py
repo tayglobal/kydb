@@ -57,6 +57,7 @@ def local_services():
                 AttributeDefinitions=[
                     {"AttributeName": "path", "AttributeType": "S"},
                     {"AttributeName": "folder", "AttributeType": "S"},
+                    {"AttributeName": "mtime", "AttributeType": "N"},
                 ],
                 ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
                 GlobalSecondaryIndexes=[
@@ -68,7 +69,19 @@ def local_services():
                             "ReadCapacityUnits": 5,
                             "WriteCapacityUnits": 5,
                         },
-                    }
+                    },
+                    {
+                        "IndexName": "folder-time-index",
+                        "KeySchema": [
+                            {"AttributeName": "folder", "KeyType": "HASH"},
+                            {"AttributeName": "mtime", "KeyType": "RANGE"},
+                        ],
+                        "Projection": {"ProjectionType": "KEYS_ONLY"},
+                        "ProvisionedThroughput": {
+                            "ReadCapacityUnits": 5,
+                            "WriteCapacityUnits": 5,
+                        },
+                    },
                 ],
             )
 
