@@ -3,6 +3,7 @@ from typing import Tuple
 import os
 from .objdb import ObjDBMixin
 from .cache_context import cache_context
+from .exceptions import IndexNotSupported
 from .interface import KYDBInterface
 from typing import Optional
 import yaml
@@ -235,6 +236,28 @@ class BaseDB(ObjDBMixin, KYDBInterface):
 
     def ls(self, folder: str, include_dir=True):
         return list(self.list_dir(folder, include_dir))
+
+    def folder(self, folder: str):
+        """ Implements folder in KYDBInterface
+
+        Default: unsupported. Backends with a server-side ordering index
+        (currently DynamoDB, via ``folder-time-index``) override this.
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not support folder()/recent() '
+            'recency queries (no server-side ordering index)')
+
+    def recent(self, folder: str, limit: int = None):
+        """ Implements recent in KYDBInterface
+
+        Sugar for ``db.folder(folder).by('mtime').desc().limit(limit)``.
+        Relies entirely on ``self.folder()`` -- backends need not override
+        this separately.
+        """
+        query = self.folder(folder).by('mtime').desc()
+        if limit is not None:
+            query = query.limit(limit)
+        return query
 
     def rm_tree(self, key: str):
         if not self.is_dir(key):

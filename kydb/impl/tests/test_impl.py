@@ -1,4 +1,5 @@
 from datetime import datetime
+import decimal
 import kydb
 import pytest
 import time
@@ -307,3 +308,279 @@ def test_dynamodb_folder_meta_has_no_mtime_or_ctime():
         assert 'contents' in item
     finally:
         db.rm_tree('/unittests/test_folder_meta_no_mtime')
+
+
+# --- Query API / DynamoDB read-path tests for the additional-index
+# feature (stage 2): db.folder(...) / db.recent(...).
+#
+# since() boundary: inclusive (>= ts) -- matches the plan (verified as
+# DynamoDB Key(...).gte() behaviour) and is tested explicitly below.
+
+@pytest.mark.parametrize('base_path', BASE_PATHS)
+def test_dynamodb_recent_newest_first(base_path):
+    _require_dynamodb()
+    db = get_db('dynamodb', base_path)
+    folder = '/unittests/test_recent_order/'
+    try:
+        for name in ('obj1', 'obj2', 'obj3'):
+            db[folder + name] = name
+            time.sleep(0.001)
+
+        assert list(db.recent(folder, limit=10)) == ['obj3', 'obj2', 'obj1']
+        assert list(db.folder(folder).by('mtime').desc()) == \
+            ['obj3', 'obj2', 'obj1']
+        assert list(db.folder(folder).by('mtime').asc()) == \
+            ['obj1', 'obj2', 'obj3']
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('base_path', BASE_PATHS)
+def test_dynamodb_recent_limit_exact(base_path):
+    _require_dynamodb()
+    db = get_db('dynamodb', base_path)
+    folder = '/unittests/test_recent_limit/'
+    try:
+        for i in range(5):
+            db[folder + f'obj{i}'] = i
+            time.sleep(0.001)
+
+        assert list(db.recent(folder, limit=2)) == ['obj4', 'obj3']
+        assert len(list(db.folder(folder).by('mtime').desc().limit(3))) == 3
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_recent_limit_does_not_overfetch_pages():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_recent_limit_pages/'
+    try:
+        for i in range(5):
+            db[folder + f'obj{i}'] = i
+            time.sleep(0.001)
+
+        calls = []
+        original_query = db.table.query
+
+        def counting_query(**kwargs):
+            calls.append(kwargs)
+            return original_query(**kwargs)
+
+        db.table.query = counting_query
+        try:
+            result = list(db.folder(folder).by('mtime').desc().limit(2))
+        finally:
+            del db.table.query
+
+        assert result == ['obj4', 'obj3']
+        # A limit() must not fetch more DynamoDB pages than it needs: one
+        # page, with the Limit sent to DynamoDB bounded by the request.
+        assert len(calls) == 1
+        assert calls[0]['Limit'] == 2
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_since_boundary_is_inclusive():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_since_boundary/'
+    try:
+        db[folder + 'obj1'] = 1
+        time.sleep(0.001)
+        db[folder + 'obj2'] = 2
+        time.sleep(0.001)
+        db[folder + 'obj3'] = 3
+
+        entries = list(db.folder(folder).by('mtime').asc().entries())
+        mtimes = {e.key: e.mtime for e in entries}
+
+        # since() is inclusive: the boundary item itself is included.
+        assert set(db.folder(folder).by('mtime').since(mtimes['obj2'])) == \
+            {'obj2', 'obj3'}
+
+        # A timestamp just below obj2's mtime still includes it...
+        assert set(
+            db.folder(folder).by('mtime').since(mtimes['obj2'] - 1)) == \
+            {'obj2', 'obj3'}
+
+        # ...but just above it excludes it.
+        assert set(
+            db.folder(folder).by('mtime').since(mtimes['obj2'] + 1)) == \
+            {'obj3'}
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_entries_are_int_not_decimal():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_entries_int/'
+    try:
+        db[folder + 'obj1'] = 1
+
+        entries = list(db.folder(folder).by('mtime').entries())
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.key == 'obj1'
+        assert isinstance(entry.mtime, int)
+        assert not isinstance(entry.mtime, decimal.Decimal)
+        assert isinstance(entry.ctime, int)
+        assert not isinstance(entry.ctime, decimal.Decimal)
+        assert entry.mtime == entry.ctime
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_recent_excludes_directories():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_recent_no_dirs/'
+    try:
+        db[folder + 'obj1'] = 1
+        db.mkdir(folder + 'subfolder')
+        db[folder + 'subfolder/obj2'] = 2
+
+        names = list(db.folder(folder).by('mtime').desc())
+        assert names == ['obj1']
+        assert 'subfolder' not in names
+        assert 'subfolder/' not in names
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_recent_delete_removes_entry():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_recent_delete/'
+    try:
+        db[folder + 'obj1'] = 1
+        db[folder + 'obj2'] = 2
+
+        assert set(db.folder(folder).by('mtime')) == {'obj1', 'obj2'}
+
+        db.delete(folder + 'obj1')
+
+        assert set(db.folder(folder).by('mtime')) == {'obj2'}
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_folder_items_returns_values():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_folder_items/'
+    try:
+        db[folder + 'obj1'] = {'a': 1}
+        db[folder + 'obj2'] = {'b': 2}
+
+        items = dict(db.folder(folder).by('mtime').items())
+        assert items == {'obj1': {'a': 1}, 'obj2': {'b': 2}}
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_recent_ties_paginate_without_dropping_or_duplicating():
+    # Regression test for LastEvaluatedKey continuation across a run of
+    # identical `mtime` values. §12 of additional_index_plan.md already
+    # verified against real Moto that DynamoDB's LastEvaluatedKey on this
+    # GSI carries {folder, mtime, path}, so ties page safely -- this locks
+    # in that _raw_query's own pagination loop preserves that property,
+    # using a synthetic multi-page response (Moto keeps 5 tiny items on
+    # one real page, so a fake is needed to force >1 page here).
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_recent_ties/'
+    full_folder = db._get_full_path(folder)
+
+    all_items = [
+        {
+            'path': f'{full_folder}obj{i}',
+            'folder': full_folder,
+            'mtime': decimal.Decimal(1000),
+        }
+        for i in range(5)
+    ]
+
+    def fake_paginated_query(**kwargs):
+        start = 0
+        esk = kwargs.get('ExclusiveStartKey')
+        if esk is not None:
+            for idx, it in enumerate(all_items):
+                if it['path'] == esk['path']:
+                    start = idx + 1
+                    break
+        page = all_items[start:start + 2]
+        result = {'Items': page}
+        if start + 2 < len(all_items):
+            last = page[-1]
+            result['LastEvaluatedKey'] = {
+                'path': last['path'],
+                'folder': last['folder'],
+                'mtime': last['mtime'],
+            }
+        return result
+
+    db.table.query = fake_paginated_query
+    try:
+        names = list(db.folder(folder).by('mtime').desc())
+    finally:
+        del db.table.query
+
+    assert len(names) == 5
+    assert sorted(names) == ['obj0', 'obj1', 'obj2', 'obj3', 'obj4']
+
+
+def test_dynamodb_recent_rewrite_moves_to_front():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_recent_rewrite/'
+    try:
+        db[folder + 'obj1'] = 1
+        time.sleep(0.001)
+        db[folder + 'obj2'] = 2
+
+        assert list(db.recent(folder, limit=10)) == ['obj2', 'obj1']
+
+        time.sleep(0.001)
+        db[folder + 'obj1'] = 'updated'
+
+        assert list(db.recent(folder, limit=10)) == ['obj1', 'obj2']
+    finally:
+        db.rm_tree(folder)
+
+
+def test_dynamodb_folder_query_chaining_does_not_mutate():
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_folder_query_immutable/'
+    try:
+        db[folder + 'obj1'] = 1
+        time.sleep(0.001)
+        db[folder + 'obj2'] = 2
+
+        base = db.folder(folder).by('mtime')
+        newest_first = base.desc()
+        oldest_first = base.asc()
+
+        # Branching from `base` after building `newest_first` must not
+        # have mutated it -- each chained call returns a fresh query.
+        assert list(newest_first) == ['obj2', 'obj1']
+        assert list(oldest_first) == ['obj1', 'obj2']
+        # `base` itself carries no explicit order (defaults to ascending)
+        # and is unaffected by either branch.
+        assert list(base) == ['obj1', 'obj2']
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', sorted(set(ALL_DB_TYPES) - {'dynamodb'}))
+def test_folder_recent_raise_index_not_supported(db_type):
+    db = get_db(db_type, '')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/unittests/whatever')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/unittests/whatever', limit=1)

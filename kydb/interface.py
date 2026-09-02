@@ -1,4 +1,5 @@
 from abc import ABC
+from .exceptions import IndexNotSupported
 
 
 class KYDBInterface(ABC):
@@ -95,6 +96,52 @@ i.e. the below are illegal and would raise KeyError
         mbjects does not
         """
         raise NotImplementedError()
+
+    def folder(self, folder: str) -> 'FolderQuery':
+        """ Build a lazy recency (or other index) query on a folder.
+
+        :param folder: The folder to query. Same folder-relative
+                       semantics as ``list_dir``.
+        :returns: A :class:`kydb.query.FolderQuery` -- a lazy, immutable
+                  query builder. Each chained call returns a new query,
+                  so the object can be safely reused/branched.
+
+        Note there is no ``include_dir`` option: directories are not
+        indexed, so recency queries only ever return objects.
+
+        Backends without a server-side ordering index raise
+        ``IndexNotSupported``.
+
+example::
+
+    db.folder('/my/folder').by('mtime').desc().limit(10)   # names, newest first
+    db.folder('/my/folder').by('mtime').since(ts).items()  # (name, value) pairs
+    db.folder('/my/folder').by('mtime').desc().entries()   # .key, .mtime, .ctime
+
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not support folder()/recent() '
+            'recency queries (no server-side ordering index)')
+
+    def recent(self, folder: str, limit: int = None):
+        """ The most recently modified objects in a folder, newest first.
+
+        :param folder: The folder to query.
+        :param limit: Optionally cap the number of results.
+        :returns: A lazy generator of names (``str``), newest first.
+
+        Sugar for ``db.folder(folder).by('mtime').desc().limit(limit)``.
+        Raises ``IndexNotSupported`` on backends without a server-side
+        ordering index.
+
+example::
+
+    db.recent('/my/folder', limit=10)
+
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not support folder()/recent() '
+            'recency queries (no server-side ordering index)')
 
     def delete(self, key: str):
         """

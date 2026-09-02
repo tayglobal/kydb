@@ -1,8 +1,103 @@
 import time
 from kydb.base import BaseDB
 from boto3.dynamodb.conditions import Key
+from kydb.exceptions import IndexNotSupported
 from kydb.folder_meta import FolderMetaMixin
+from kydb.query import Entry, FolderQuery
 import boto3
+
+
+class DynamoDBFolderQuery(FolderQuery):
+    """ FolderQuery backed by the ``folder-time-index`` GSI.
+
+    ``folder-index``/``folder-time-index`` semantics: the GSI is
+    ``KEYS_ONLY``, so a query page only ever carries ``path``, ``folder``
+    and ``mtime``. ``ctime`` (needed by :meth:`entries`) and the object
+    value (needed by :meth:`items`) require one extra per-item fetch --
+    the index projection is deliberately not widened to ``ALL`` to keep
+    the (potentially large, pickled) ``contents`` blob out of the index.
+
+    Plain iteration (bare names, e.g. via ``db.recent(...)`` or
+    ``for name in db.folder(...)``) needs neither, so it stays on the raw
+    index page with no extra round trip per item.
+    """
+
+    _SUPPORTED_INDEXES = ('mtime',)
+
+    def _full_folder(self) -> str:
+        return self._db._ensure_slashes(self._db._get_full_path(self._folder))
+
+    def _key_condition(self):
+        if self._index_name not in self._SUPPORTED_INDEXES:
+            raise IndexNotSupported(
+                "DynamoDB folder query only supports by('mtime'), got "
+                f"by({self._index_name!r})")
+
+        cond = Key('folder').eq(self._full_folder())
+        if self._since_ts is not None:
+            # since() is inclusive: entries with mtime == ts are included.
+            cond = cond & Key('mtime').gte(self._since_ts)
+        return cond
+
+    def _raw_query(self):
+        """ Lazily page ``folder-time-index``.
+
+        Yields ``(name, mtime, full_path)`` with ``mtime`` already cast
+        to ``int``. Honours ``since()``/``limit()``/``asc()``/``desc()``;
+        a ``limit()`` never requests (or fetches) more DynamoDB pages
+        than needed to satisfy it.
+        """
+        key_condition = self._key_condition()
+        remaining = self._limit_n
+        start_key = None
+
+        while True:
+            if remaining is not None and remaining <= 0:
+                return
+
+            kwargs = dict(
+                IndexName='folder-time-index',
+                KeyConditionExpression=key_condition,
+                ScanIndexForward=self._ascending)
+            if remaining is not None:
+                kwargs['Limit'] = remaining
+            if start_key is not None:
+                kwargs['ExclusiveStartKey'] = start_key
+
+            res = self._db.table.query(**kwargs)
+
+            for item in res.get('Items', []):
+                full_path = item['path']
+                name = full_path.rsplit('/', 1)[1]
+                yield name, int(item['mtime']), full_path
+                if remaining is not None:
+                    remaining -= 1
+                    if remaining <= 0:
+                        return
+
+            start_key = res.get('LastEvaluatedKey')
+            if start_key is None:
+                return
+
+    def __iter__(self):
+        for name, _mtime, _full_path in self._raw_query():
+            yield name
+
+    def entries(self):
+        for name, mtime, full_path in self._raw_query():
+            # KEYS_ONLY does not project ctime; fetch it narrowly rather
+            # than widening the index projection or pulling `contents`.
+            item = self._db.table.get_item(
+                Key={'path': full_path},
+                ProjectionExpression='ctime',
+            ).get('Item', {})
+            ctime = int(item['ctime']) if 'ctime' in item else mtime
+            yield Entry(key=name, mtime=mtime, ctime=ctime)
+
+    def items(self):
+        for name, _mtime, _full_path in self._raw_query():
+            key = self._db._ensure_slashes(self._folder) + name
+            yield name, self._db.read(key)
 
 
 class DynamoDB(FolderMetaMixin, BaseDB):
@@ -53,6 +148,11 @@ class DynamoDB(FolderMetaMixin, BaseDB):
         self.table.delete_item(Key={
             'path': key,
         })
+
+    def folder(self, folder: str) -> DynamoDBFolderQuery:
+        """ Implements folder in KYDBInterface, backed by
+        ``folder-time-index``. """
+        return DynamoDBFolderQuery(self, folder)
 
     def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)
