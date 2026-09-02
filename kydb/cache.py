@@ -33,6 +33,31 @@ class CacheDB(KYDBInterface, ObjDBMixin):
     def ls(self, folder: str, include_dir=True):
         return list(self.list_dir(folder, include_dir))
 
+    def folder(self, folder: str, allow_scan: bool = False):
+        """Delegates recency queries to persist_db, matching list_dir.
+
+        The cache_db only holds what has been individually read, so it
+        cannot answer a folder-wide question -- the returned FolderQuery
+        is bound directly to persist_db (its .items()/.entries() read
+        straight from persist_db, bypassing cache_db entirely, same as
+        list_dir already does for plain listing).
+        """
+        return self.persist_db.folder(folder, allow_scan=allow_scan)
+
+    def recent(self, folder: str, limit: int = None,
+               allow_scan: bool = False):
+        """Delegates recency queries to persist_db, matching list_dir."""
+        return self.persist_db.recent(
+            folder, limit=limit, allow_scan=allow_scan)
+
+    def reindex(self, folder: str) -> int:
+        """Reindex the authoritative persistent database.
+
+        Recency queries intentionally ignore the partial cache, so rebuilding
+        its metadata would be both incomplete and unnecessary.
+        """
+        return self.persist_db.reindex(folder)
+
     def __repr__(self):
         """
         The representation of the db.

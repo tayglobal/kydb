@@ -34,6 +34,7 @@ Find out more
 .. toctree::
    install
    examples
+   recency
    implementations
    api
    base_path

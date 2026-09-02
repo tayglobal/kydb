@@ -2,6 +2,8 @@ from .api import connect
 from .objdb import ObjDBMixin
 from .dbobj import DbObj, stored
 from .base import BaseDB
+from .exceptions import KydbException, DbObjException, IndexNotSupported
+from .query import Entry, FolderQuery
 
 __all__ = [
     'connect',
@@ -9,5 +11,10 @@ __all__ = [
     'ObjDBMixin',
     'DbObj',
     'stored',
-    'BaseDB'
+    'BaseDB',
+    'KydbException',
+    'DbObjException',
+    'IndexNotSupported',
+    'Entry',
+    'FolderQuery',
 ]
