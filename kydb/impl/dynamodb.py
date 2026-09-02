@@ -25,9 +25,10 @@ class DynamoDB(FolderMetaMixin, BaseDB):
         folder = key.rsplit('/', 1)[0] + '/'
         objname = key.rsplit('/', 1)[1]
 
-        # `folder` is a DynamoDB reserved word, so it must be referenced
-        # via an ExpressionAttributeNames placeholder rather than literally
-        # in the UpdateExpression.
+        # `folder` is referenced via an ExpressionAttributeNames
+        # placeholder. This is defensive rather than required -- `folder`
+        # is not a DynamoDB reserved word -- but it keeps the expression
+        # robust if the attribute is ever renamed to one that is.
         if FolderMetaMixin._is_folder_meta(objname):
             # Directories are excluded from the folder-time-index: no
             # mtime/ctime is written for `.folder-*` marker records, which
