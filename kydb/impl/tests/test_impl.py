@@ -40,6 +40,23 @@ def get_db(db_type, base_path):
     return kydb.connect(DB_URLS[db_type] + '/' + base_path)
 
 
+def assert_eventually_equal(actual_fn, expected, timeout=10):
+    """Assert an eventually-consistent service read with a deadline.
+
+    Moto updates indexes synchronously, while real DynamoDB GSIs do not.
+    Keeping the retry in tests makes that production contract explicit
+    without adding sleeps or retries to kydb's query implementation.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        actual = actual_fn()
+        if actual == expected:
+            return actual
+        if time.monotonic() >= deadline:
+            assert actual == expected
+        time.sleep(0.1)
+
+
 @contextmanager
 def list_dir_db(db_type: str, base_path: str):
     db = get_db(db_type, base_path)
@@ -137,7 +154,11 @@ def test_mkdir(db_type, base_path):
     db = get_db(db_type, base_path)
 
     db.mkdir('/unittests/test_mkdir/foo')
-    assert db.ls('/unittests/test_mkdir/') == ['foo/']
+    if db_type == 'dynamodb':
+        assert_eventually_equal(
+            lambda: db.ls('/unittests/test_mkdir/'), ['foo/'])
+    else:
+        assert db.ls('/unittests/test_mkdir/') == ['foo/']
     assert db.is_dir('/unittests/test_mkdir')
     assert db.ls('/unittests/test_mkdir/foo') == []
     assert db.is_dir('/unittests/test_mkdir/foo')
@@ -169,10 +190,18 @@ def test_rmdir_success(db_type, base_path):
     assert db.is_dir('/unittests_rmdir')
     assert db.is_dir('/unittests_rmdir/foo')
     db.rmdir('/unittests_rmdir/foo')
-    assert not db.is_dir('/unittests_rmdir/foo')
+    if db_type == 'dynamodb':
+        assert_eventually_equal(
+            lambda: db.is_dir('/unittests_rmdir/foo'), False)
+    else:
+        assert not db.is_dir('/unittests_rmdir/foo')
 
     db.rmdir('/unittests_rmdir')
-    assert not db.is_dir('/unittests_rmdir')
+    if db_type == 'dynamodb':
+        assert_eventually_equal(
+            lambda: db.is_dir('/unittests_rmdir'), False)
+    else:
+        assert not db.is_dir('/unittests_rmdir')
 
 
 @pytest.mark.parametrize('db_type,base_path', MARK_PARAMS)
@@ -326,7 +355,9 @@ def test_dynamodb_recent_newest_first(base_path):
             db[folder + name] = name
             time.sleep(0.001)
 
-        assert list(db.recent(folder, limit=10)) == ['obj3', 'obj2', 'obj1']
+        assert_eventually_equal(
+            lambda: list(db.recent(folder, limit=10)),
+            ['obj3', 'obj2', 'obj1'])
         assert list(db.folder(folder).by('mtime').desc()) == \
             ['obj3', 'obj2', 'obj1']
         assert list(db.folder(folder).by('mtime').asc()) == \
@@ -345,7 +376,8 @@ def test_dynamodb_recent_limit_exact(base_path):
             db[folder + f'obj{i}'] = i
             time.sleep(0.001)
 
-        assert list(db.recent(folder, limit=2)) == ['obj4', 'obj3']
+        assert_eventually_equal(
+            lambda: list(db.recent(folder, limit=2)), ['obj4', 'obj3'])
         assert len(list(db.folder(folder).by('mtime').desc().limit(3))) == 3
     finally:
         db.rm_tree(folder)
@@ -359,6 +391,12 @@ def test_dynamodb_recent_limit_does_not_overfetch_pages():
         for i in range(5):
             db[folder + f'obj{i}'] = i
             time.sleep(0.001)
+
+        # Let the real GSI converge before instrumenting the one query
+        # whose call count this test is specifically about.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime').desc().limit(2)),
+            ['obj4', 'obj3'])
 
         calls = []
         original_query = db.table.query
@@ -393,6 +431,9 @@ def test_dynamodb_since_boundary_is_inclusive():
         time.sleep(0.001)
         db[folder + 'obj3'] = 3
 
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime').asc()),
+            ['obj1', 'obj2', 'obj3'])
         entries = list(db.folder(folder).by('mtime').asc().entries())
         mtimes = {e.key: e.mtime for e in entries}
 
@@ -420,6 +461,8 @@ def test_dynamodb_entries_are_int_not_decimal():
     try:
         db[folder + 'obj1'] = 1
 
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime')), ['obj1'])
         entries = list(db.folder(folder).by('mtime').entries())
         assert len(entries) == 1
         entry = entries[0]
@@ -442,7 +485,8 @@ def test_dynamodb_recent_excludes_directories():
         db.mkdir(folder + 'subfolder')
         db[folder + 'subfolder/obj2'] = 2
 
-        names = list(db.folder(folder).by('mtime').desc())
+        names = assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime').desc()), ['obj1'])
         assert names == ['obj1']
         assert 'subfolder' not in names
         assert 'subfolder/' not in names
@@ -458,11 +502,13 @@ def test_dynamodb_recent_delete_removes_entry():
         db[folder + 'obj1'] = 1
         db[folder + 'obj2'] = 2
 
-        assert set(db.folder(folder).by('mtime')) == {'obj1', 'obj2'}
+        assert_eventually_equal(
+            lambda: set(db.folder(folder).by('mtime')), {'obj1', 'obj2'})
 
         db.delete(folder + 'obj1')
 
-        assert set(db.folder(folder).by('mtime')) == {'obj2'}
+        assert_eventually_equal(
+            lambda: set(db.folder(folder).by('mtime')), {'obj2'})
     finally:
         db.rm_tree(folder)
 
@@ -475,6 +521,8 @@ def test_dynamodb_folder_items_returns_values():
         db[folder + 'obj1'] = {'a': 1}
         db[folder + 'obj2'] = {'b': 2}
 
+        assert_eventually_equal(
+            lambda: set(db.folder(folder).by('mtime')), {'obj1', 'obj2'})
         items = dict(db.folder(folder).by('mtime').items())
         assert items == {'obj1': {'a': 1}, 'obj2': {'b': 2}}
     finally:
@@ -541,12 +589,14 @@ def test_dynamodb_recent_rewrite_moves_to_front():
         time.sleep(0.001)
         db[folder + 'obj2'] = 2
 
-        assert list(db.recent(folder, limit=10)) == ['obj2', 'obj1']
+        assert_eventually_equal(
+            lambda: list(db.recent(folder, limit=10)), ['obj2', 'obj1'])
 
         time.sleep(0.001)
         db[folder + 'obj1'] = 'updated'
 
-        assert list(db.recent(folder, limit=10)) == ['obj1', 'obj2']
+        assert_eventually_equal(
+            lambda: list(db.recent(folder, limit=10)), ['obj1', 'obj2'])
     finally:
         db.rm_tree(folder)
 
@@ -566,7 +616,7 @@ def test_dynamodb_folder_query_chaining_does_not_mutate():
 
         # Branching from `base` after building `newest_first` must not
         # have mutated it -- each chained call returns a fresh query.
-        assert list(newest_first) == ['obj2', 'obj1']
+        assert_eventually_equal(lambda: list(newest_first), ['obj2', 'obj1'])
         assert list(oldest_first) == ['obj1', 'obj2']
         # `base` itself carries no explicit order (defaults to ascending)
         # and is unaffected by either branch.
@@ -612,6 +662,10 @@ def test_dynamodb_entries_does_not_refetch_per_item():
     ``ctime`` is projected into ``folder-time-index`` (INCLUDE), so
     exposing ``Entry.ctime`` must not cost one extra read per row --
     that would make entries() N+1 in the size of the result.
+
+    An unlimited query additionally reads ``folder-index`` once at the
+    end, to pick up any objects with no index entry as the epoch tail.
+    That is one extra query for the whole result, not one per row.
     """
     _require_dynamodb()
     db = get_db('dynamodb', '')
@@ -620,6 +674,12 @@ def test_dynamodb_entries_does_not_refetch_per_item():
         for i in range(5):
             db[folder + f'obj{i}'] = i
             time.sleep(0.001)
+
+        # Keep eventual-consistency retries outside the instrumented
+        # section so the assertions below still describe one API call.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime').desc().limit(5)),
+            ['obj4', 'obj3', 'obj2', 'obj1', 'obj0'])
 
         query_calls = []
         get_item_calls = []
@@ -644,9 +704,16 @@ def test_dynamodb_entries_does_not_refetch_per_item():
 
         assert [e.key for e in entries] == [
             'obj4', 'obj3', 'obj2', 'obj1', 'obj0']
-        # One index query, and crucially zero per-item reads.
-        assert len(query_calls) == 1
+        # Crucially, zero per-item reads: entries() must not be N+1.
         assert get_item_calls == []
+        # The index query, plus one folder-index read for the epoch tail
+        # once the time index is exhausted. That tail read is O(1) in
+        # queries, not O(n) -- it is a single folder listing, and it only
+        # happens because this query is unlimited (see the limit() case
+        # below, which never reaches it).
+        assert len(query_calls) == 2
+        assert query_calls[0]['IndexName'] == 'folder-time-index'
+        assert query_calls[1]['IndexName'] == 'folder-index'
         # ctime still arrives, as int rather than Decimal.
         assert all(isinstance(e.ctime, int) for e in entries)
         assert all(isinstance(e.mtime, int) for e in entries)
@@ -1157,6 +1224,8 @@ def test_recent_mtime_is_exact_nanoseconds(db_type):
         # what Memory requires; passing it uniformly keeps this test
         # about timestamp precision rather than about capability.
         query = db.folder(folder, allow_scan=True)
+        assert_eventually_equal(
+            lambda: list(query.by('mtime').desc()), ['obj1'])
         entry = list(query.by('mtime').desc().entries())[0]
 
         assert isinstance(entry.mtime, int)

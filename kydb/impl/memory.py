@@ -42,9 +42,13 @@ class MemoryDB(FolderMetaMixin, BaseDB):
         self.__cache[self.db_name][key] = value
 
         objname = key.rsplit('/', 1)[-1]
-        if self._is_folder_meta(objname):
+        if self._is_folder_meta(objname) or not self.mtime_index_enabled:
             # Directories are excluded from the recency index: no mtime
             # is ever recorded for `.folder-*` marker records.
+            #
+            # The same applies to a db with `mtime-index: false` in
+            # config -- nothing is recorded, so there is nothing for
+            # folder()/recent() to sort by.
             return
 
         now_ns = time.time_ns()
@@ -78,7 +82,14 @@ class MemoryDB(FolderMetaMixin, BaseDB):
         MemoryDB has no server-side ordering index -- this is a
         client-side scan-and-sort of the (already in-memory) folder, so
         it requires the caller to opt in with ``allow_scan=True``.
+
+        Raises ``IndexNotSupported`` when the index is disabled in
+        config: the mtimes it sorts by are the ones recorded on write,
+        so with those switched off there is nothing to scan.
         """
+        if not self.mtime_index_enabled:
+            self._raise_mtime_index_disabled()
+
         if not allow_scan:
             raise IndexNotSupported(
                 f'{type(self).__name__} does not support folder()/'

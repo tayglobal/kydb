@@ -19,6 +19,41 @@ class BaseDB(ObjDBMixin, KYDBInterface):
         self.url = url
         self._cache = {}
 
+    @property
+    def mtime_index_enabled(self) -> bool:
+        """ Whether this db maintains the ``mtime`` recency index on write.
+
+        Read from the per-db config (``KYDB_CONFIG_PATH`` ->
+        ``dbs.<db_name>.mtime-index``), defaulting to ``True`` when the
+        key -- or the whole config file -- is absent, so the feature works
+        with nothing configured.
+
+        Setting it to ``False`` skips the index maintenance on every
+        write. Objects written while it is off carry no timestamp, so
+        they behave exactly like rows predating the feature: they appear
+        in the epoch tail once it is turned back on, and move into place
+        the first time they are rewritten.
+        """
+        if not self._config:
+            return True
+
+        return bool(self._config.get('mtime-index', True))
+
+    def _raise_mtime_index_disabled(self):
+        """ Raise the ``IndexNotSupported`` for a db whose recency index
+        has been switched off in config.
+
+        ``allow_scan=True`` does not rescue this: disabling the index
+        removes the only record of when an object was written, so there
+        is nothing left for a client-side sort to sort by. (Files and S3
+        are unaffected -- their ``mtime`` comes from the substrate and is
+        never maintained by kydb, so they ignore the setting entirely.)
+        """
+        raise IndexNotSupported(
+            f'The mtime index is disabled for {self.db_name} '
+            "(mtime-index: false in the kydb config), so folder()/"
+            'recent() have no timestamps to order by')
+
     def _get_config(self) -> Optional[dict]:
         config_path = os.environ.get('KYDB_CONFIG_PATH')
         if config_path:

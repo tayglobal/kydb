@@ -108,9 +108,9 @@ i.e. the below are illegal and would raise KeyError
                        semantics as ``list_dir``.
         :param allow_scan: Opt into an O(n) client-side scan-and-sort on
                        backends with no server-side ordering index
-                       (Memory, Files, S3). Ignored (there is no scan
-                       fallback to opt into) on backends with a native
-                       index -- DynamoDB and Redis -- and on backends
+                       (Memory, Files, S3), and on DynamoDB when the
+                       table has no ``folder-time-index``. Ignored on
+                       Redis, which is always native, and on backends
                        that are unsupported outright (HTTP/HTTPS), which
                        always raise regardless of this flag.
         :returns: A :class:`kydb.query.FolderQuery` -- a lazy, immutable
@@ -122,6 +122,21 @@ i.e. the below are illegal and would raise KeyError
 
         Backends without a server-side ordering index raise
         ``IndexNotSupported`` unless ``allow_scan=True`` is passed.
+
+        **Objects with no timestamp.** An object written before the
+        index existed -- or while it was switched off in config -- has
+        no recorded ``mtime``. It is still returned, reported at
+        ``mtime == ctime == 0``: after every indexed object under
+        ``desc()``, before every one under ``asc()``, and excluded by any
+        ``since(ts)`` with ``ts > 0``. No migration is needed, and each
+        such object moves into place the first time it is rewritten.
+
+        **Switching the index off.** Setting ``mtime-index: false`` in
+        the per-db kydb config stops the index being maintained on
+        write. ``folder()`` and ``recent()`` then raise
+        ``IndexNotSupported``, and ``allow_scan=True`` does not override
+        that -- with nothing recording timestamps there is nothing to
+        sort by.
 
 example::
 
@@ -150,6 +165,9 @@ example::
         ``db.folder(folder, allow_scan=allow_scan).by('mtime').desc().limit(limit)``.
         Raises ``IndexNotSupported`` on backends without a server-side
         ordering index, unless ``allow_scan=True`` is passed.
+
+        See :meth:`folder` for how objects with no recorded timestamp are
+        ordered, and for the ``mtime-index`` config setting.
 
 example::
 
