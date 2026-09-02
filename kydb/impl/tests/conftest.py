@@ -76,7 +76,10 @@ def local_services():
                             {"AttributeName": "folder", "KeyType": "HASH"},
                             {"AttributeName": "mtime", "KeyType": "RANGE"},
                         ],
-                        "Projection": {"ProjectionType": "KEYS_ONLY"},
+                        "Projection": {
+                            "ProjectionType": "INCLUDE",
+                            "NonKeyAttributes": ["ctime"],
+                        },
                         "ProvisionedThroughput": {
                             "ReadCapacityUnits": 5,
                             "WriteCapacityUnits": 5,

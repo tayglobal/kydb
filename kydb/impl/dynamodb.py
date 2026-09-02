@@ -69,7 +69,13 @@ class DynamoDBFolderQuery(FolderQuery):
             for item in res.get('Items', []):
                 full_path = item['path']
                 name = full_path.rsplit('/', 1)[1]
-                yield name, int(item['mtime']), full_path
+                # ctime is projected into the index (INCLUDE), so no
+                # extra read is needed. Rows written before ctime existed
+                # fall back to mtime.
+                ctime = item.get('ctime')
+                yield (name, int(item['mtime']),
+                       int(ctime) if ctime is not None else int(item['mtime']),
+                       full_path)
                 if remaining is not None:
                     remaining -= 1
                     if remaining <= 0:
@@ -80,22 +86,15 @@ class DynamoDBFolderQuery(FolderQuery):
                 return
 
     def __iter__(self):
-        for name, _mtime, _full_path in self._raw_query():
+        for name, _mtime, _ctime, _full_path in self._raw_query():
             yield name
 
     def entries(self):
-        for name, mtime, full_path in self._raw_query():
-            # KEYS_ONLY does not project ctime; fetch it narrowly rather
-            # than widening the index projection or pulling `contents`.
-            item = self._db.table.get_item(
-                Key={'path': full_path},
-                ProjectionExpression='ctime',
-            ).get('Item', {})
-            ctime = int(item['ctime']) if 'ctime' in item else mtime
+        for name, mtime, ctime, _full_path in self._raw_query():
             yield Entry(key=name, mtime=mtime, ctime=ctime)
 
     def items(self):
-        for name, _mtime, _full_path in self._raw_query():
+        for name, _mtime, _ctime, _full_path in self._raw_query():
             key = self._db._ensure_slashes(self._folder) + name
             yield name, self._db.read(key)
 

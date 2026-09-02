@@ -584,3 +584,52 @@ def test_folder_recent_raise_index_not_supported(db_type):
 
     with pytest.raises(kydb.IndexNotSupported):
         db.recent('/unittests/whatever', limit=1)
+
+
+def test_dynamodb_entries_does_not_refetch_per_item():
+    """entries() must be served entirely from the index page.
+
+    ``ctime`` is projected into ``folder-time-index`` (INCLUDE), so
+    exposing ``Entry.ctime`` must not cost one extra read per row --
+    that would make entries() N+1 in the size of the result.
+    """
+    _require_dynamodb()
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_entries_no_refetch/'
+    try:
+        for i in range(5):
+            db[folder + f'obj{i}'] = i
+            time.sleep(0.001)
+
+        query_calls = []
+        get_item_calls = []
+        original_query = db.table.query
+        original_get_item = db.table.get_item
+
+        def counting_query(**kwargs):
+            query_calls.append(kwargs)
+            return original_query(**kwargs)
+
+        def counting_get_item(**kwargs):
+            get_item_calls.append(kwargs)
+            return original_get_item(**kwargs)
+
+        db.table.query = counting_query
+        db.table.get_item = counting_get_item
+        try:
+            entries = list(db.folder(folder).by('mtime').desc().entries())
+        finally:
+            del db.table.query
+            del db.table.get_item
+
+        assert [e.key for e in entries] == [
+            'obj4', 'obj3', 'obj2', 'obj1', 'obj0']
+        # One index query, and crucially zero per-item reads.
+        assert len(query_calls) == 1
+        assert get_item_calls == []
+        # ctime still arrives, as int rather than Decimal.
+        assert all(isinstance(e.ctime, int) for e in entries)
+        assert all(isinstance(e.mtime, int) for e in entries)
+        assert all(e.ctime == e.mtime for e in entries)
+    finally:
+        db.rm_tree(folder)
