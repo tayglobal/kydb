@@ -16,10 +16,11 @@ class DynamoDBScanFolderQuery(ScanFolderQuery):
     from the table -- i.e. against a database upgraded to a kydb that has
     recency queries, without adding the new index to the table.
 
-    ``folder-index`` has an ``ALL`` projection, so ``mtime``/``ctime``
-    come back on the index page itself and this costs no per-item reads
-    beyond the folder read. Rows written before the feature existed carry
-    neither, and sort as epoch exactly as they do in the native path.
+    ``folder-index`` projects ``mtime``/``ctime`` (either via the historical
+    ``ALL`` projection or the current ``INCLUDE`` projection), so this costs
+    no per-item reads beyond the folder read. Rows written before the feature
+    existed carry neither, and sort as epoch exactly as they do in the native
+    path.
     """
 
     def _raw_entries(self):
@@ -362,6 +363,59 @@ class DynamoDB(FolderMetaMixin, BaseDB):
             self._raise_mtime_index_disabled()
 
         return DynamoDBFolderQuery(self, folder, allow_scan=allow_scan)
+
+    def reindex(self, folder: str) -> int:
+        """Timestamp objects in ``folder`` that have no ``mtime`` yet.
+
+        The existing ``folder-index`` supplies the candidate paths. A
+        conditional update adds ``mtime``/``ctime`` without touching the
+        payload and without overwriting a concurrent normal write. One
+        reindex timestamp is shared by the batch, accurately expressing that
+        the original write ordering is unknown.
+        """
+        if not self.mtime_index_enabled:
+            self._raise_mtime_index_disabled()
+
+        full_folder = self._ensure_slashes(self._get_full_path(folder))
+        now_ns = time.time_ns()
+        count = 0
+        start_key = None
+
+        while True:
+            kwargs = {
+                'IndexName': 'folder-index',
+                'KeyConditionExpression': Key('folder').eq(full_folder),
+            }
+            if start_key is not None:
+                kwargs['ExclusiveStartKey'] = start_key
+
+            res = self.table.query(**kwargs)
+            for item in res.get('Items', []):
+                path = item['path']
+                name = path.rsplit('/', 1)[1]
+                if FolderMetaMixin._is_folder_meta(name) or \
+                        'mtime' in item:
+                    continue
+
+                try:
+                    self.table.update_item(
+                        Key={'path': path},
+                        UpdateExpression=(
+                            'SET mtime=:t, ctime=if_not_exists(ctime, :t)'),
+                        ConditionExpression='attribute_not_exists(mtime)',
+                        ExpressionAttributeValues={':t': now_ns})
+                except ClientError as err:
+                    code = err.response.get('Error', {}).get('Code')
+                    if code == 'ConditionalCheckFailedException':
+                        # A concurrent writer indexed it after our folder
+                        # page was read. It needs no work from reindex.
+                        continue
+                    raise
+                count += 1
+
+            start_key = res.get('LastEvaluatedKey')
+            if start_key is None:
+                return count
 
     def _use_scan_fallback(self, allow_scan: bool) -> bool:
         """ Whether to serve this query by scanning ``folder-index``.

@@ -49,11 +49,12 @@ res = self.table.query(
 One query, ordering done server-side, native pagination via
 `LastEvaluatedKey`, no extra writes per object.
 
-`KEYS_ONLY` matters. The existing `folder-index` uses `ALL`, so every pickled
-payload is duplicated into the index even though the only field ever read is
-`item['path']`. Do not repeat that here. (Changing `folder-index` to
-`KEYS_ONLY` is a separate, worthwhile cleanup — it requires dropping and
-recreating that index, so it is listed as optional.)
+Projection size matters. The historical `folder-index` used `ALL`, so every
+pickled payload was duplicated into the index even though listing only needs
+`path`. It now uses `INCLUDE ['mtime', 'ctime']`: that keeps payloads out while
+retaining the timestamps required by the explicit `allow_scan=True` fallback
+and by `reindex`. Existing tables may retain `ALL`; changing a GSI projection
+requires dropping and recreating that index.
 
 Why a *new* index rather than changing the existing one: GSI key schemas are
 immutable, so a sort key cannot be retrofitted onto `folder-index`. An LSI is
@@ -350,7 +351,8 @@ The DynamoDB table must have:
 
 1. `path` (String) as partition key
 2. `folder` (String) attribute
-3. GSI `folder-index`: partition key `folder` — existing, used by `list_dir`
+3. GSI `folder-index`: partition key `folder`, projection `INCLUDE` with
+   `mtime` and `ctime` — used by `list_dir`, the scan fallback and `reindex`
 4. GSI `folder-time-index`: partition key `folder`, sort key `mtime`
    (Number), projection `INCLUDE` with non-key attribute `ctime` — new,
    used by recency queries
@@ -433,6 +435,21 @@ implementation.
 
 The practical consequence: **the full test suite in §8 of the TODO can run in
 CI under Moto.** No part of it requires a real DynamoDB table.
+
+### Real-service confirmation (2026-09-02)
+
+The two emulator gaps were subsequently closed against disposable table
+`kydb-real-tests-20260902` in account `792811916206`, region
+`ap-northeast-1`. The opt-in test seeded 800 long-key rows before adding the
+GSI, observed `Backfilling=true`, waited for `ACTIVE`, then confirmed the
+first unbounded query returned `LastEvaluatedKey` and that all 800 rows were
+recovered over multiple real 1 MiB pages. It passed in 531.05 seconds.
+
+The complete DynamoDB-facing suite then reported 64 passed tests and 23
+backend-inapplicable skips. The table's `Purpose=kydb-real-tests` and
+`ManagedBy=openclaw` tags were verified before deletion; deletion was awaited
+and confirmed. The repeatable procedure is in `AGENTS.md`, and the live-only
+check is `kydb/impl/tests/test_real_dynamodb_index.py`.
 
 ## 13. Making the index optional
 

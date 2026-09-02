@@ -64,7 +64,10 @@ def local_services():
                     {
                         "IndexName": "folder-index",
                         "KeySchema": [{"AttributeName": "folder", "KeyType": "HASH"}],
-                        "Projection": {"ProjectionType": "ALL"},
+                        "Projection": {
+                            "ProjectionType": "INCLUDE",
+                            "NonKeyAttributes": ["mtime", "ctime"],
+                        },
                         "ProvisionedThroughput": {
                             "ReadCapacityUnits": 5,
                             "WriteCapacityUnits": 5,

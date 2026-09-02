@@ -24,13 +24,13 @@ Before creating anything, tell the user the proposed account, region, and
 table name.  Use a disposable, date-suffixed name such as
 `kydb-real-tests-YYYYMMDD`; never point this suite at a production table.
 
-The table must have:
+For the normal real-service suite, the table must have:
 
 - a string `path` hash key;
 - a string `folder` attribute;
 - a numeric `mtime` attribute;
 - a `folder-index` global secondary index with `folder` as its hash key and
-  `ALL` projection;
+  an `INCLUDE` projection containing `mtime` and `ctime`;
 - a `folder-time-index` global secondary index with `folder` as its hash key,
   `mtime` as its range key, and an `INCLUDE` projection containing `ctime`;
 - on-demand (`PAY_PER_REQUEST`) billing.
@@ -59,13 +59,33 @@ python -m pytest \
   kydb/impl/tests/test_impl.py kydb/impl/tests/test_index_compat.py -vv
 ```
 
-The successful real-service run on 2026-09-02 completed 49 DynamoDB cases in
-`test_impl.py` and 12 DynamoDB compatibility cases in
+The completed real-service run on 2026-09-02 reported 64 passed tests and 23
+backend-inapplicable skips across `test_impl.py` and
 `test_index_compat.py`. Real GSIs are eventually consistent, unlike Moto, so
 service-facing assertions use the bounded `assert_eventually_equal` helper.
 The run used an isolated temporary Python environment with `pytest`, `boto3`,
 and `PyYAML` installed; do not add a virtual environment to this repo just to
 run the test.
+
+The separate backfill/1 MiB validation starts from a fresh disposable table
+that has only `folder-index`; the test seeds 800 long-key rows, creates
+`folder-time-index` while the table is populated, waits for it to become
+active, and verifies an unbounded query crosses a real 1 MiB response page.
+It mutates the table schema and is therefore gated separately:
+
+```bash
+PYTHONPATH=. \
+KYDB_TEST_LOCAL_SERVICES='' \
+KINYU_UNITTEST_DYNAMODB="$table_name" \
+KYDB_RUN_REAL_INDEX_VALIDATION=1 \
+AWS_PROFILE=kakuto \
+AWS_DEFAULT_REGION=ap-northeast-1 \
+python -m pytest kydb/impl/tests/test_real_dynamodb_index.py -vv
+```
+
+On 2026-09-02 this test passed in 531.05 seconds. DynamoDB reported
+`Backfilling=true`; after the GSI became active, the first query returned a
+`LastEvaluatedKey` and all 800 entries were recovered across multiple pages.
 
 ## Discovering and cleaning real test databases
 

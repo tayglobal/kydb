@@ -318,6 +318,43 @@ class RedisDB(FolderMetaMixin, BaseDB):
 
         return RedisFolderQuery(self, folder, allow_scan=allow_scan)
 
+    def reindex(self, folder: str) -> int:
+        """Add folder-hash objects missing from the recency sorted set.
+
+        All legacy objects receive one shared migration timestamp. Existing
+        members and their exact ``mtime``/``ctime`` hashes are untouched.
+        """
+        if not self.mtime_index_enabled:
+            self._raise_mtime_index_disabled()
+
+        full_folder = self._ensure_slashes(self._get_full_path(folder))[:-1]
+        raw_names = self.connection.hkeys(full_folder)
+        raw_indexed = self.connection.zrange(
+            self._mtime_key(full_folder), 0, -1)
+
+        def decode(value):
+            return value.decode() if isinstance(value, bytes) else value
+
+        names = [decode(value) for value in raw_names]
+        indexed = {decode(value) for value in raw_indexed}
+        missing = [
+            name for name in names
+            if name not in indexed and not self._is_folder_meta(name)
+        ]
+        if not missing:
+            return 0
+
+        now_ns = time.time_ns()
+        pipe = self.connection.pipeline(transaction=False)
+        pipe.zadd(
+            self._mtime_key(full_folder),
+            {name: now_ns for name in missing})
+        for name in missing:
+            pipe.hset(self._mtime_val_key(full_folder), name, now_ns)
+            pipe.hsetnx(self._ctime_key(full_folder), name, now_ns)
+        pipe.execute()
+        return len(missing)
+
     def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)[:-1]
         try:

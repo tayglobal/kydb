@@ -11,7 +11,7 @@ class IndexNotSupported(KydbException):
     (or index name) that has no server-side ordering to serve them.
 
     Backends without a native ordering index must raise this rather than
-    silently falling back to a full scan-and-sort. An opt-in
-    ``allow_scan=True`` client-side fallback is planned separately.
+    silently falling back to a full scan-and-sort. Supported backends offer
+    an explicit ``allow_scan=True`` client-side fallback.
     """
     pass

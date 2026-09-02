@@ -132,3 +132,7 @@ class FileDB(BaseDB):
                 "recent() natively; pass allow_scan=True to opt into "
                 'an O(n) client-side scan-and-sort of the folder')
         return FileFolderQuery(self, folder, allow_scan=True)
+
+    def reindex(self, folder: str) -> int:
+        """No-op: filesystem ``st_mtime_ns`` already covers old files."""
+        return 0

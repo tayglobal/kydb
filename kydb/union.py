@@ -260,6 +260,29 @@ Reading and writing::
             query = query.limit(limit)
         return query
 
+    def reindex(self, folder: str) -> int:
+        """Reindex every member that maintains recency metadata.
+
+        A union query can yield objects from any member, so only rebuilding
+        the front database would leave legacy objects in later members at the
+        epoch tail. Members such as Files/S3 report zero; unsupported members
+        are skipped. If no member supports reindexing, the union is
+        unsupported too.
+        """
+        count = 0
+        supported = False
+        for db in self.dbs:
+            try:
+                count += db.reindex(folder)
+                supported = True
+            except IndexNotSupported:
+                continue
+
+        if not supported:
+            raise IndexNotSupported(
+                'UnionDB: no member db supports reindex()')
+        return count
+
     def __repr__(self):
         """
         The representation of the db.

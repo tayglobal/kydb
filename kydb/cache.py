@@ -50,6 +50,14 @@ class CacheDB(KYDBInterface, ObjDBMixin):
         return self.persist_db.recent(
             folder, limit=limit, allow_scan=allow_scan)
 
+    def reindex(self, folder: str) -> int:
+        """Reindex the authoritative persistent database.
+
+        Recency queries intentionally ignore the partial cache, so rebuilding
+        its metadata would be both incomplete and unnecessary.
+        """
+        return self.persist_db.reindex(folder)
+
     def __repr__(self):
         """
         The representation of the db.

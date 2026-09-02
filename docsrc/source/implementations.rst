@@ -22,7 +22,8 @@ DynamoDB
     The dynamodb must have:
 
     #. ``path`` as primary key
-    #. An index ``folder-index`` with partition key ``folder``
+    #. An index ``folder-index`` with partition key ``folder``, projection
+       ``INCLUDE`` with non-key attributes ``mtime`` and ``ctime``
     #. An index ``folder-time-index`` with partition key ``folder`` and
        sort key ``mtime`` (Number), projection ``INCLUDE`` with
        non-key attribute ``ctime``

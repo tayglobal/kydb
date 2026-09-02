@@ -179,6 +179,21 @@ example::
             f'{type(self).__name__} does not support folder()/recent() '
             'recency queries (no server-side ordering index)')
 
+    def reindex(self, folder: str) -> int:
+        """Add missing recency timestamps to objects in ``folder``.
+
+        :param folder: The folder to reindex. Subfolders are not traversed.
+        :returns: The number of objects newly added to the recency index.
+
+        Existing ``mtime`` and ``ctime`` values are preserved. Legacy objects
+        have no recoverable write time, so this deliberately records the time
+        of reindexing. That moves them ahead of genuinely older indexed
+        objects; callers should normally keep the truthful epoch-tail
+        behaviour and use this only when migration-day ordering is preferred.
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not maintain a recency index')
+
     def delete(self, key: str):
         """
         Delete a key from the db.

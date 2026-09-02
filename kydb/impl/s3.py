@@ -123,3 +123,7 @@ class S3DB(FolderMetaMixin, BaseDB):
                 "recent() natively; pass allow_scan=True to opt into "
                 'an O(n) client-side scan-and-sort of the folder')
         return S3FolderQuery(self, folder, allow_scan=True)
+
+    def reindex(self, folder: str) -> int:
+        """No-op: S3 ``LastModified`` already covers existing objects."""
+        return 0

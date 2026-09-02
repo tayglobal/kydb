@@ -97,6 +97,27 @@ class MemoryDB(FolderMetaMixin, BaseDB):
                 'an O(n) client-side scan-and-sort of the folder')
         return MemoryFolderQuery(self, folder, allow_scan=True)
 
+    def reindex(self, folder: str) -> int:
+        """Timestamp in-memory objects that have no recency metadata."""
+        if not self.mtime_index_enabled:
+            self._raise_mtime_index_disabled()
+
+        full_folder = self._ensure_slashes(self._get_full_path(folder))
+        prefix_len = len(full_folder)
+        cache = self.__cache[self.db_name]
+        meta = self.__meta[self.db_name]
+        missing = [
+            key for key in cache
+            if key.startswith(full_folder)
+            and '/' not in key[prefix_len:]
+            and not self._is_folder_meta(key[prefix_len:])
+            and key not in meta
+        ]
+        now_ns = time.time_ns()
+        for key in missing:
+            meta[key] = (now_ns, now_ns)
+        return len(missing)
+
     def _folder_time_entries(self, full_folder: str):
         """ Yield ``(name, mtime, ctime)`` for every object directly in
         ``full_folder`` (sub-folders excluded).

@@ -1164,6 +1164,29 @@ def test_union_recent_partial_support_uses_supporting_members_only():
         mem.rm_tree(folder)
 
 
+def test_union_reindex_updates_every_member():
+    db1 = kydb.connect('memory://union_reindex_db1')
+    db2 = kydb.connect('memory://union_reindex_db2')
+    union = kydb.connect(
+        'memory://union_reindex_db1;memory://union_reindex_db2')
+    folder = '/unittests/test_union_reindex/'
+    try:
+        db1._config = {'mtime-index': False}
+        db2._config = {'mtime-index': False}
+        db1[folder + 'one'] = 1
+        db2[folder + 'two'] = 2
+        db1._config = None
+        db2._config = None
+
+        assert union.reindex(folder) == 2
+        assert set(union.recent(folder, allow_scan=True)) == {'one', 'two'}
+    finally:
+        db1._config = None
+        db2._config = None
+        db1.rm_tree(folder)
+        db2.rm_tree(folder)
+
+
 # --- CacheDB: recency delegates entirely to persist_db (the cache_db
 # only holds what has been individually read, so it cannot answer a
 # folder-wide question) -- matching CacheDB.list_dir.
@@ -1200,6 +1223,25 @@ def test_cache_db_recent_raises_without_allow_scan():
 
     with pytest.raises(kydb.IndexNotSupported):
         db.recent('/unittests/whatever', limit=1)
+
+
+def test_cache_db_reindex_delegates_to_persist_db():
+    db = kydb.connect(
+        'memory://cache_reindex_cache|memory://cache_reindex_persist')
+    folder = '/unittests/test_cache_reindex/'
+    try:
+        db.cache_db._config = {'mtime-index': False}
+        db.persist_db._config = {'mtime-index': False}
+        db[folder + 'legacy'] = 1
+        db.cache_db._config = None
+        db.persist_db._config = None
+
+        assert db.reindex(folder) == 1
+        assert list(db.recent(folder, allow_scan=True)) == ['legacy']
+    finally:
+        db.cache_db._config = None
+        db.persist_db._config = None
+        db.rm_tree(folder)
 
 
 @pytest.mark.parametrize('db_type', sorted(

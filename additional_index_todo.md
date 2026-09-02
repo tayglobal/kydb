@@ -22,17 +22,17 @@ then the other backends.
 
 - [x] Add GSI `folder-time-index` to the test table in
       `kydb/impl/tests/conftest.py:54` — `folder` HASH, `mtime` RANGE
-      (Number), projection `KEYS_ONLY`; add `mtime` to `AttributeDefinitions`
+      (Number), projection `INCLUDE ['ctime']`; add `mtime` to
+      `AttributeDefinitions`
 - [x] ~~Confirm Moto supports a sparse GSI with a Number sort key and
       honours `ScanIndexForward`~~ — **verified** against Moto 5.2.3 /
       boto3 1.43.86, 14/14 assertions passed. The whole suite in §8 can run
       in CI; no real DynamoDB table is required. See §12 of
       `additional_index_plan.md`
 - [x] Update table spec in `docsrc/source/implementations.rst:25`
-- [ ] Update table spec in `AGENTS.md` (the "The table must have:" list)
-      — out of scope for this stage: `AGENTS.md` has pre-existing
-      uncommitted changes from another session that must not be touched;
-      left for a later stage/session to update alongside those changes
+- [x] Update table spec in `AGENTS.md` (the "The table must have:" list)
+      — completed when the earlier unrelated changes were committed; stale
+      checkbox corrected 2026-09-02
 
 ## 2. DynamoDB write path
 
@@ -154,11 +154,12 @@ need nothing here; only DynamoDB and Redis maintain their own index.
 
 ### 7d. Reindex (optional, demoted)
 
-- [ ] Implement `db.reindex(folder)` — scan the folder and `update_item`
+- [x] Implement `db.reindex(folder)` — scan the folder and `update_item`
       the missing `mtime` / `ctime`. No longer required for correctness:
       it stamps legacy rows with `now`, which sorts them *ahead* of
-      genuinely recent writes. Offer it as a deliberate choice, not a
-      migration step
+      genuinely recent writes. It returns the number newly indexed, preserves
+      existing timestamps/content, supports DynamoDB/Redis/Memory, delegates
+      through UnionDB/CacheDB, and is a no-op for Files/S3
 
 ## 8. Tests
 
@@ -203,15 +204,17 @@ need nothing here; only DynamoDB and Redis maintain their own index.
       anyway
 - [x] Redis write against a folder colliding with an index key name fails
       with a clear kydb error, not `WRONGTYPE`
-- [ ] `reindex` makes pre-existing rows carry a real `mtime` — stage 7d
-      (optional), not in scope here
+- [x] `reindex` makes pre-existing rows carry a real `mtime` without changing
+      content or existing timestamps — DynamoDB, Redis and Memory; wrapper
+      delegation covered for UnionDB and CacheDB
 
 ## 9. Docs
 
-- [ ] Document the query API and `recent()` — likely a new
-      `docsrc/source` page, linked from `index.rst`
-- [ ] Document the clock-skew caveat (client-side timestamps, no total order
-      across writers with drifting clocks)
+- [x] Document the query API and `recent()` in
+      `docsrc/source/recency.rst`, linked from `index.rst`
+- [x] Document the clock-skew caveat (client-side timestamps, no total order
+      across writers with drifting clocks), ties, backend resolution, scan
+      fallback, epoch rows, reindex and index configuration
 - [x] Document the epoch tail: objects written before the index existed
       report `mtime == ctime == 0`, appear at the end of `desc()` order,
       are excluded by any `since(ts > 0)`, and move into place the first
@@ -225,29 +228,35 @@ need nothing here; only DynamoDB and Redis maintain their own index.
 
 Moto cannot exercise these two; everything else is covered in CI.
 
-- [ ] GSI backfill timing when `folder-time-index` is added to a table that
-      already contains data
-- [ ] Pagination across real 1MB page boundaries
-- [ ] Use the procedure in `AGENTS.md` (disposable `kydb-real-tests-YYYYMMDD`
-      table, deleted afterwards)
+- [x] GSI backfill when `folder-time-index` is added to a populated table —
+      verified with 800 pre-existing indexed rows; DynamoDB reported
+      `Backfilling=true` and the GSI became `ACTIVE` during the 531.05-second
+      end-to-end live test
+- [x] Pagination across real 1MB page boundaries — the first unbounded query
+      returned `LastEvaluatedKey`; all 800 long-key entries were returned over
+      multiple pages without loss or duplication
+- [x] Use the procedure in `AGENTS.md` — disposable tagged table
+      `kydb-real-tests-20260902` in account `792811916206`,
+      `ap-northeast-1`; live validation passed, full DynamoDB suite reported
+      64 passed / 23 backend-inapplicable skips, and the table was verified by
+      tags then deleted
 
 ## 11. Optional follow-ups
 
-- [ ] Change `folder-index` projection from `ALL` to `KEYS_ONLY` — only
-      `item['path']` is ever read (`kydb/impl/dynamodb.py:52`), so the `ALL`
-      projection duplicates every pickled payload into the index. Requires
-      dropping and recreating the index.
-      **No longer free**: `DynamoDBScanFolderQuery` (the `allow_scan=True`
-      fallback for a table with no `folder-time-index`) now reads
-      `mtime`/`ctime` straight off the `folder-index` page, which only
-      works because the projection is `ALL`. Under `KEYS_ONLY` that
-      fallback would see no timestamps and report every object at epoch.
-      Either add `mtime`/`ctime` as `INCLUDE` non-key attributes when
-      narrowing the projection, or accept a per-item read in the scan
-      fallback
-- [ ] Shard the index partition key as `folder#<n>` if a single folder ever
-      exceeds ~1000 writes/s
-- [ ] Generalise `by()` to user-defined non-time indexes
+- [x] Narrow `folder-index` from `ALL` to `INCLUDE ['mtime', 'ctime']` in the
+      canonical/test schema. This removes duplicated pickled payloads while
+      preserving the attributes needed by `DynamoDBScanFolderQuery` and
+      `reindex`. Existing `ALL` indexes remain compatible; changing their
+      projection is an explicit infrastructure migration.
+- [x] Resolve index sharding: closed as a workload-conditional future design,
+      not current implementation. No folder is known to approach the
+      ~1000-write/s partition limit, and a shard count/routing contract cannot
+      be selected safely without that workload. The constraint and mitigation
+      remain documented in plan section 10.
+- [x] Resolve user-defined non-time indexes: closed as a future feature rather
+      than part of recency indexing. `by()` deliberately leaves the API seam,
+      but storage schemas, value projection and backend semantics need their
+      own approved design before any truthful implementation is possible.
 
 ## 12. Making the index optional
 
@@ -255,8 +264,9 @@ See §13 of `additional_index_plan.md`. Order matters: pipeline Redis
 first, since it removes most of the motivation for the switch.
 
 Implemented 2026-09-02. New tests live in
-`kydb/impl/tests/test_index_compat.py`; 263 pass, and flake8 reports the
-same 24 pre-existing warnings as before the change.
+`kydb/impl/tests/test_index_compat.py`; the completed suite reports 268 passed
+and one intentionally skipped live-only test. Flake8 reports the same 24
+pre-existing warnings as before the change, with no new warnings.
 
 ### 12a. Pipeline Redis (do first, independent of the flag)
 

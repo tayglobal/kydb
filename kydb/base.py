@@ -298,6 +298,15 @@ class BaseDB(ObjDBMixin, KYDBInterface):
             query = query.limit(limit)
         return query
 
+    def reindex(self, folder: str) -> int:
+        """Implements reindex in KYDBInterface.
+
+        Backends that maintain recency metadata override this. Backends whose
+        timestamps come directly from their substrate may return zero.
+        """
+        raise IndexNotSupported(
+            f'{type(self).__name__} does not maintain a recency index')
+
     def rm_tree(self, key: str):
         if not self.is_dir(key):
             raise KeyError('{} is not a directory'.format(key))

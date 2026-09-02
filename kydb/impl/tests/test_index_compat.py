@@ -223,6 +223,37 @@ def test_dynamodb_rewrite_promotes_legacy_row_out_of_tail():
         db.rm_tree(folder)
 
 
+def test_dynamodb_reindex_timestamps_only_legacy_rows():
+    """The optional maintenance operation promotes missing rows without
+    rewriting contents or disturbing timestamps that already exist.
+    """
+    _require('dynamodb')
+    db = get_db('dynamodb', '')
+    folder = '/unittests/test_reindex/'
+    try:
+        db[folder + 'indexed'] = 'current'
+        indexed_before = db.table.get_item(
+            Key={'path': folder + 'indexed'})['Item']
+        _write_legacy_row(db, folder + 'legacy')
+
+        before = time.time_ns()
+        assert db.reindex(folder) == 1
+        assert db.reindex(folder) == 0
+
+        legacy = db.table.get_item(Key={'path': folder + 'legacy'})['Item']
+        indexed_after = db.table.get_item(
+            Key={'path': folder + 'indexed'})['Item']
+        assert legacy['mtime'] >= before
+        assert legacy['ctime'] == legacy['mtime']
+        assert legacy['contents'].value == db._serialise('legacy')
+        assert indexed_after['mtime'] == indexed_before['mtime']
+        assert indexed_after['ctime'] == indexed_before['ctime']
+        assert_eventually_equal(
+            lambda: list(db.recent(folder)), ['legacy', 'indexed'])
+    finally:
+        db.rm_tree(folder)
+
+
 def test_dynamodb_epoch_tail_excludes_directories():
     """ Sub-folders are not objects and must stay out of the tail, just
     as they stay out of the index.
@@ -270,6 +301,59 @@ def test_redis_legacy_object_appears_at_tail():
         db.rm_tree(folder)
 
 
+def test_redis_reindex_timestamps_only_legacy_objects():
+    _require('redis')
+    db = get_db('redis', '')
+    folder = '/unittests/test_redis_reindex/'
+    try:
+        db[folder + 'indexed'] = 1
+        db[folder + 'legacy'] = 2
+        full = db._ensure_slashes(db._get_full_path(folder))[:-1]
+        db.connection.zrem(db._mtime_key(full), 'legacy')
+        db.connection.hdel(db._mtime_val_key(full), 'legacy')
+        db.connection.hdel(db._ctime_key(full), 'legacy')
+        indexed_before = next(
+            entry for entry in db.folder(folder).by('mtime').entries()
+            if entry.key == 'indexed')
+
+        before = time.time_ns()
+        assert db.reindex(folder) == 1
+        assert db.reindex(folder) == 0
+
+        entries = list(db.folder(folder).by('mtime').desc().entries())
+        assert [entry.key for entry in entries] == ['legacy', 'indexed']
+        assert entries[0].mtime >= before
+        assert entries[0].ctime == entries[0].mtime
+        indexed_after = next(
+            entry for entry in entries if entry.key == 'indexed')
+        assert indexed_after.mtime == indexed_before.mtime
+        assert indexed_after.ctime == indexed_before.ctime
+    finally:
+        db.rm_tree(folder)
+
+
+def test_memory_reindex_timestamps_objects_written_while_disabled():
+    _require('memory')
+    db = get_db('memory', '')
+    folder = '/unittests/test_memory_reindex/'
+    old_config = db._config
+    try:
+        db._config = {'mtime-index': False}
+        db[folder + 'legacy'] = 1
+        db._config = None
+        db[folder + 'indexed'] = 2
+
+        assert db.reindex(folder) == 1
+        assert db.reindex(folder) == 0
+        entries = list(
+            db.folder(folder, allow_scan=True).by('mtime').desc().entries())
+        assert [entry.key for entry in entries] == ['legacy', 'indexed']
+        assert all(entry.mtime > 0 for entry in entries)
+    finally:
+        db._config = old_config
+        db.rm_tree(folder)
+
+
 # --- Section 9.4: a table with no folder-time-index ----------------------
 
 @contextmanager
@@ -291,7 +375,10 @@ def _table_without_time_index():
         GlobalSecondaryIndexes=[{
             'IndexName': 'folder-index',
             'KeySchema': [{'AttributeName': 'folder', 'KeyType': 'HASH'}],
-            'Projection': {'ProjectionType': 'ALL'},
+            'Projection': {
+                'ProjectionType': 'INCLUDE',
+                'NonKeyAttributes': ['mtime', 'ctime'],
+            },
         }],
         Tags=[
             {'Key': 'Purpose', 'Value': 'kydb-real-tests'},
