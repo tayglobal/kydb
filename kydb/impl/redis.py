@@ -24,15 +24,13 @@ class RedisFolderQuery(FolderQuery):
     a rewrite -- in a companion hash so it survives independently of the
     sorted set's score.
 
-    Unlike every other backend here, ``mtime``/``ctime`` are
-    milliseconds since the epoch, not nanoseconds: a Redis sorted-set
-    score is a double, which cannot exactly represent a ~19-digit
-    nanosecond timestamp (doubles are only exact up to 2**53), so a
-    nanosecond score would silently round -- and did, when this was
-    tried, making ``entries().mtime`` disagree by up to ~100ns with the
-    exact integer stored for ``ctime``. Milliseconds since the epoch
-    (~1.8e12 today) stay comfortably inside the exact range, at the
-    documented cost of coarser (millisecond) ordering resolution.
+    ``mtime``/``ctime`` are nanoseconds since the epoch, matching every
+    other backend. A sorted-set score is a double and is only exact up to
+    ``2**53``, so a ~19-digit nanosecond timestamp does not survive it
+    intact -- storing one as a score rounds it to roughly 256ns. The
+    score is therefore used **only for ordering**, which that resolution
+    serves fine, while the exact nanosecond value is kept in a companion
+    hash and is what ``entries()`` returns.
     """
 
     _SUPPORTED_INDEXES = ('mtime',)
@@ -69,11 +67,14 @@ class RedisFolderQuery(FolderQuery):
             return
 
         members = [member for member, _score in raw]
+        # The score ordered the result; the exact nanosecond values come
+        # from the hashes, since a double cannot hold them precisely.
+        mtimes = conn.hmget(RedisDB._mtime_val_key(folder), members)
         ctimes = conn.hmget(ctime_key, members)
 
-        for (member, score), ctime_raw in zip(raw, ctimes):
+        for (member, score), mtime_raw, ctime_raw in zip(raw, mtimes, ctimes):
             name = member.decode() if isinstance(member, bytes) else member
-            mtime = int(score)
+            mtime = int(mtime_raw) if mtime_raw is not None else int(score)
             ctime = int(ctime_raw) if ctime_raw is not None else mtime
             yield Entry(key=name, mtime=mtime, ctime=ctime)
 
@@ -164,25 +165,33 @@ class RedisDB(FolderMetaMixin, BaseDB):
             # is ever added to the sorted set for `.folder-*` marker
             # records, matching DynamoDB's sparse-index behaviour.
             #
-            # Milliseconds, not time.time_ns() -- see RedisFolderQuery's
-            # docstring: a ZSET score is a double, which cannot exactly
-            # hold a nanosecond epoch timestamp.
-            now_ms = time.time_ns() // 1_000_000
-            self.connection.zadd(self._mtime_key(folder), {obj: now_ms})
+            # The ZSET score orders the folder. It is a double, so it
+            # cannot hold a nanosecond epoch exactly (~256ns resolution);
+            # that is fine for ordering, and the exact value is kept in a
+            # hash so callers still get nanoseconds, as on every other
+            # backend.
+            now_ns = time.time_ns()
+            self.connection.zadd(self._mtime_key(folder), {obj: now_ns})
+            self.connection.hset(self._mtime_val_key(folder), obj, now_ns)
             # HSETNX is Redis's native if_not_exists: ctime is set once,
             # on first write, and a rewrite leaves it untouched.
-            self.connection.hsetnx(self._ctime_key(folder), obj, now_ms)
+            self.connection.hsetnx(self._ctime_key(folder), obj, now_ns)
 
     def delete_raw(self, key: str):
         self.connection.delete(key)
         folder, obj = key.rsplit('/', 1)
         self.connection.hdel(folder, obj)
         self.connection.zrem(self._mtime_key(folder), obj)
+        self.connection.hdel(self._mtime_val_key(folder), obj)
         self.connection.hdel(self._ctime_key(folder), obj)
 
     @staticmethod
     def _mtime_key(folder: str) -> str:
         return folder + ':mtime-index'
+
+    @staticmethod
+    def _mtime_val_key(folder: str) -> str:
+        return folder + ':mtime-values'
 
     @staticmethod
     def _ctime_key(folder: str) -> str:

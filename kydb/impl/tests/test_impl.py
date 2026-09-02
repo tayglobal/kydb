@@ -1133,3 +1133,39 @@ def test_cache_db_recent_raises_without_allow_scan():
 
     with pytest.raises(kydb.IndexNotSupported):
         db.recent('/unittests/whatever', limit=1)
+
+
+@pytest.mark.parametrize('db_type', sorted(
+    set(ALL_DB_TYPES) & {'dynamodb', 'redis', 'memory'}))
+def test_recent_mtime_is_exact_nanoseconds(db_type):
+    """mtime must be exact nanoseconds on every backend that reports it.
+
+    Redis is the interesting case: a sorted-set score is a double and is
+    only exact to 2**53, so a ~19-digit nanosecond timestamp does not
+    survive being stored as one. The score orders the folder, but the
+    exact value must come from elsewhere -- if it ever regresses to being
+    read back off the score, the timestamp silently loses precision.
+    """
+    db = get_db(db_type, '')
+    folder = '/unittests/test_mtime_exact_ns/'
+    try:
+        before = time.time_ns()
+        db[folder + 'obj1'] = 1
+        after = time.time_ns()
+
+        # allow_scan is a no-op on the natively-indexed backends and is
+        # what Memory requires; passing it uniformly keeps this test
+        # about timestamp precision rather than about capability.
+        query = db.folder(folder, allow_scan=True)
+        entry = list(query.by('mtime').desc().entries())[0]
+
+        assert isinstance(entry.mtime, int)
+        assert isinstance(entry.ctime, int)
+        # Nanoseconds, not milliseconds/seconds: bracketed by the write.
+        assert before <= entry.mtime <= after
+        assert before <= entry.ctime <= after
+        # Guard the actual failure mode: a value that has been through a
+        # double would not survive this comparison.
+        assert int(float(entry.mtime)) != entry.mtime or entry.mtime < 2 ** 53
+    finally:
+        db.rm_tree(folder)

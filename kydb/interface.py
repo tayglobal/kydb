@@ -1,4 +1,8 @@
 from abc import ABC
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - import for type checking only
+    from .query import FolderQuery
 from .exceptions import IndexNotSupported
 
 
