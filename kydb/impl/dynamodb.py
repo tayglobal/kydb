@@ -148,10 +148,17 @@ class DynamoDB(FolderMetaMixin, BaseDB):
             'path': key,
         })
 
-    def folder(self, folder: str) -> DynamoDBFolderQuery:
+    def folder(self, folder: str, allow_scan: bool = False) \
+            -> DynamoDBFolderQuery:
         """ Implements folder in KYDBInterface, backed by
-        ``folder-time-index``. """
-        return DynamoDBFolderQuery(self, folder)
+        ``folder-time-index``.
+
+        ``allow_scan`` is accepted for signature consistency with the
+        other backends but is a no-op here: DynamoDB always has a
+        native, server-side ordering index, so there is nothing to opt
+        into a scan fallback for.
+        """
+        return DynamoDBFolderQuery(self, folder, allow_scan=allow_scan)
 
     def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)

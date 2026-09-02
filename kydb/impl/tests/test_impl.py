@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import decimal
 import kydb
 import pytest
@@ -575,8 +575,16 @@ def test_dynamodb_folder_query_chaining_does_not_mutate():
         db.rm_tree(folder)
 
 
-@pytest.mark.parametrize('db_type', sorted(set(ALL_DB_TYPES) - {'dynamodb'}))
+@pytest.mark.parametrize(
+    'db_type', sorted(set(ALL_DB_TYPES) - {'dynamodb', 'redis'}))
 def test_folder_recent_raise_index_not_supported(db_type):
+    """Without allow_scan=True, every backend other than DynamoDB (native
+    index) and Redis (native sorted set) must still raise -- memory,
+    files and s3 only support recency via the opt-in scan-and-sort
+    fallback, and union only via its members. HTTP/HTTPS (not in
+    ALL_DB_TYPES by default) stay unsupported outright, with no
+    allow_scan escape hatch at all -- see test_http_recent_unsupported.
+    """
     db = get_db(db_type, '')
 
     with pytest.raises(kydb.IndexNotSupported):
@@ -584,6 +592,18 @@ def test_folder_recent_raise_index_not_supported(db_type):
 
     with pytest.raises(kydb.IndexNotSupported):
         db.recent('/unittests/whatever', limit=1)
+
+
+@pytest.mark.parametrize(
+    'db_type', sorted(set(ALL_DB_TYPES) & {'redis'}))
+def test_folder_recent_native_no_raise_without_allow_scan(db_type):
+    """Redis has a genuinely native ordering index (a per-folder sorted
+    set), so unlike memory/files/s3 it does NOT require allow_scan=True
+    -- folder()/recent() must not raise even without it.
+    """
+    db = get_db(db_type, '')
+    db.folder('/unittests/whatever')  # must not raise
+    db.recent('/unittests/whatever', limit=1)  # must not raise
 
 
 def test_dynamodb_entries_does_not_refetch_per_item():
@@ -633,3 +653,483 @@ def test_dynamodb_entries_does_not_refetch_per_item():
         assert all(e.ctime == e.mtime for e in entries)
     finally:
         db.rm_tree(folder)
+
+
+# --- Wrappers (UnionDB/CacheDB) and other backends for the
+# additional-index feature (stage 3): allow_scan=True client-side
+# scan-and-sort fallback for memory/files/s3, a native sorted-set index
+# for Redis, UnionDB.folder() merging member dbs, and CacheDB.folder()
+# delegating to persist_db.
+#
+# allow_scan lives on both entry points, kept consistent:
+#   db.folder(folder, allow_scan=True)
+#   db.recent(folder, limit=n, allow_scan=True)
+# Redis is a genuine native index and ignores/does not require it.
+
+# Backends whose folder()/recent() only work via the client-side
+# allow_scan=True scan-and-sort fallback.
+SCAN_RECENT_DB_TYPES = [t for t in ('memory', 'files') if t in ALL_DB_TYPES]
+# Backends with a genuinely native ordering index -- no allow_scan
+# needed.
+NATIVE_RECENT_DB_TYPES = [t for t in ('redis',) if t in ALL_DB_TYPES]
+RECENT_DB_TYPES = SCAN_RECENT_DB_TYPES + NATIVE_RECENT_DB_TYPES
+RECENT_MARK_PARAMS = list(product(RECENT_DB_TYPES, BASE_PATHS))
+# Backends that separately track ctime (if_not_exists-style) rather than
+# falling back to mtime.
+CTIME_TRACKING_DB_TYPES = [
+    t for t in ('memory', 'redis') if t in RECENT_DB_TYPES]
+# Backends with no stored ctime at all: mtime is reused for ctime, so a
+# rewrite bumps "ctime" too. Documented, not engineered around -- see
+# MemoryFolderQuery/FileFolderQuery/S3FolderQuery docstrings.
+CTIME_FALLBACK_DB_TYPES = [t for t in ('files',) if t in RECENT_DB_TYPES]
+
+
+def _recent_kwargs(db_type):
+    """allow_scan is required for the client-side scan-and-sort fallback
+    (memory/files/s3); redis is a native index and ignores it.
+    """
+    return {'allow_scan': True} if db_type in SCAN_RECENT_DB_TYPES else {}
+
+
+@pytest.mark.parametrize('db_type,base_path', RECENT_MARK_PARAMS)
+def test_recent_newest_first(db_type, base_path):
+    db = get_db(db_type, base_path)
+    folder = '/unittests/test_recent_newest_first/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        for name in ('obj1', 'obj2', 'obj3'):
+            db[folder + name] = name
+            time.sleep(0.01)
+
+        assert list(db.recent(folder, limit=10, **kwargs)) == \
+            ['obj3', 'obj2', 'obj1']
+        assert list(db.folder(folder, **kwargs).by('mtime').desc()) == \
+            ['obj3', 'obj2', 'obj1']
+        assert list(db.folder(folder, **kwargs).by('mtime').asc()) == \
+            ['obj1', 'obj2', 'obj3']
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type,base_path', RECENT_MARK_PARAMS)
+def test_recent_limit_exact(db_type, base_path):
+    db = get_db(db_type, base_path)
+    folder = '/unittests/test_recent_limit_exact/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        for i in range(5):
+            db[folder + f'obj{i}'] = i
+            time.sleep(0.01)
+
+        assert list(db.recent(folder, limit=2, **kwargs)) == \
+            ['obj4', 'obj3']
+        assert len(list(
+            db.folder(folder, **kwargs).by('mtime').desc().limit(3))) == 3
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', RECENT_DB_TYPES)
+def test_recent_excludes_directories(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_excludes_directories/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+        db.mkdir(folder + 'subfolder')
+        db[folder + 'subfolder/obj2'] = 2
+
+        names = list(db.folder(folder, **kwargs).by('mtime').desc())
+        assert names == ['obj1']
+        assert 'subfolder' not in names
+        assert 'subfolder/' not in names
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', RECENT_DB_TYPES)
+def test_recent_delete_removes_entry(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_delete_removes_entry/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+        db[folder + 'obj2'] = 2
+
+        assert set(db.folder(folder, **kwargs).by('mtime')) == \
+            {'obj1', 'obj2'}
+
+        db.delete(folder + 'obj1')
+
+        assert set(db.folder(folder, **kwargs).by('mtime')) == {'obj2'}
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', RECENT_DB_TYPES)
+def test_recent_items_returns_values(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_items/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = {'a': 1}
+        db[folder + 'obj2'] = {'b': 2}
+
+        items = dict(db.folder(folder, **kwargs).by('mtime').items())
+        assert items == {'obj1': {'a': 1}, 'obj2': {'b': 2}}
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', RECENT_DB_TYPES)
+def test_recent_entries_first_write_mtime_equals_ctime(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_entries/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+
+        entries = list(db.folder(folder, **kwargs).by('mtime').entries())
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.key == 'obj1'
+        assert isinstance(entry.mtime, int)
+        assert isinstance(entry.ctime, int)
+        assert entry.mtime == entry.ctime
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', CTIME_TRACKING_DB_TYPES)
+def test_recent_rewrite_bumps_mtime_preserves_ctime(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_rewrite_ctime/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+        entry1 = list(
+            db.folder(folder, **kwargs).by('mtime').entries())[0]
+
+        time.sleep(0.01)
+        db[folder + 'obj1'] = 2
+        entry2 = list(
+            db.folder(folder, **kwargs).by('mtime').entries())[0]
+
+        assert entry2.mtime > entry1.mtime
+        assert entry2.ctime == entry1.ctime
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', CTIME_FALLBACK_DB_TYPES)
+def test_recent_ctime_falls_back_to_mtime_on_rewrite(db_type):
+    """Files (and S3, tested separately below) have no stored ctime
+    distinct from mtime -- documented fallback, not a bug: a rewrite
+    bumps both together.
+    """
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_ctime_fallback/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+        entry1 = list(
+            db.folder(folder, **kwargs).by('mtime').entries())[0]
+        assert entry1.mtime == entry1.ctime
+
+        time.sleep(0.01)
+        db[folder + 'obj1'] = 2
+        entry2 = list(
+            db.folder(folder, **kwargs).by('mtime').entries())[0]
+
+        assert entry2.mtime > entry1.mtime
+        assert entry2.mtime == entry2.ctime
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('db_type', RECENT_DB_TYPES)
+def test_recent_rewrite_moves_to_front(db_type):
+    db = get_db(db_type, '')
+    folder = '/unittests/test_recent_rewrite/'
+    kwargs = _recent_kwargs(db_type)
+    try:
+        db[folder + 'obj1'] = 1
+        time.sleep(0.01)
+        db[folder + 'obj2'] = 2
+
+        assert list(db.recent(folder, limit=10, **kwargs)) == \
+            ['obj2', 'obj1']
+
+        time.sleep(0.01)
+        db[folder + 'obj1'] = 'updated'
+
+        assert list(db.recent(folder, limit=10, **kwargs)) == \
+            ['obj1', 'obj2']
+    finally:
+        db.rm_tree(folder)
+
+
+# --- S3: LastModified is only second-resolution (both on real S3 and
+# under Moto -- verified directly against Moto during design), too
+# coarse to order against short wall-clock sleeps. Ordering/limit tests
+# therefore patch list_objects_v2's reported LastModified rather than
+# relying on real elapsed time; membership/exclusion/deletion tests
+# don't depend on ordering and use real timestamps.
+
+def _require_s3():
+    if 's3' not in ALL_DB_TYPES:
+        pytest.skip('s3 not in KYDB_TEST_DB_TYPES')
+
+
+@contextmanager
+def _s3_fake_last_modified(db, fake_times: dict):
+    """Patch db.s3.list_objects_v2 to report the given per-(full S3 key)
+    LastModified overrides, leaving everything else (including which
+    keys are actually returned) untouched.
+    """
+    original_list = db.s3.list_objects_v2
+
+    def fake_list_objects_v2(**kwargs):
+        res = original_list(**kwargs)
+        for item in res.get('Contents', []):
+            if item['Key'] in fake_times:
+                item['LastModified'] = fake_times[item['Key']]
+        return res
+
+    db.s3.list_objects_v2 = fake_list_objects_v2
+    try:
+        yield
+    finally:
+        del db.s3.list_objects_v2
+
+
+def test_s3_recent_newest_first_and_limit():
+    _require_s3()
+    db = get_db('s3', '')
+    folder = '/unittests/test_s3_recent_order/'
+    prefix = db._get_full_path(folder)[1:]
+    try:
+        for name in ('obj1', 'obj2', 'obj3'):
+            db[folder + name] = name
+
+        base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        fake_times = {
+            prefix + 'obj1': base,
+            prefix + 'obj2': base + timedelta(seconds=1),
+            prefix + 'obj3': base + timedelta(seconds=2),
+        }
+        with _s3_fake_last_modified(db, fake_times):
+            assert list(db.recent(folder, limit=10, allow_scan=True)) == \
+                ['obj3', 'obj2', 'obj1']
+            assert list(db.recent(folder, limit=2, allow_scan=True)) == \
+                ['obj3', 'obj2']
+            assert list(
+                db.folder(folder, allow_scan=True).by('mtime').asc()) == \
+                ['obj1', 'obj2', 'obj3']
+    finally:
+        db.rm_tree(folder)
+
+
+@pytest.mark.parametrize('base_path', BASE_PATHS)
+def test_s3_recent_newest_first_with_base_path(base_path):
+    _require_s3()
+    db = get_db('s3', base_path)
+    folder = '/unittests/test_s3_recent_order_bp/'
+    prefix = db._get_full_path(folder)[1:]
+    try:
+        for name in ('obj1', 'obj2'):
+            db[folder + name] = name
+
+        base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        fake_times = {
+            prefix + 'obj1': base,
+            prefix + 'obj2': base + timedelta(seconds=1),
+        }
+        with _s3_fake_last_modified(db, fake_times):
+            assert list(db.recent(folder, limit=10, allow_scan=True)) == \
+                ['obj2', 'obj1']
+    finally:
+        db.rm_tree(folder)
+
+
+def test_s3_recent_excludes_directories():
+    _require_s3()
+    db = get_db('s3', '')
+    folder = '/unittests/test_s3_recent_no_dirs/'
+    try:
+        db[folder + 'obj1'] = 1
+        db.mkdir(folder + 'subfolder')
+        db[folder + 'subfolder/obj2'] = 2
+
+        names = list(db.folder(folder, allow_scan=True).by('mtime').desc())
+        assert names == ['obj1']
+        assert 'subfolder' not in names
+        assert 'subfolder/' not in names
+    finally:
+        db.rm_tree(folder)
+
+
+def test_s3_recent_delete_removes_entry():
+    _require_s3()
+    db = get_db('s3', '')
+    folder = '/unittests/test_s3_recent_delete/'
+    try:
+        db[folder + 'obj1'] = 1
+        db[folder + 'obj2'] = 2
+
+        assert set(db.folder(folder, allow_scan=True).by('mtime')) == \
+            {'obj1', 'obj2'}
+
+        db.delete(folder + 'obj1')
+
+        assert set(db.folder(folder, allow_scan=True).by('mtime')) == \
+            {'obj2'}
+    finally:
+        db.rm_tree(folder)
+
+
+# --- UnionDB: heapq.merge over the per-db (already sorted) FolderQuery
+# generators, deduplicating by name with front-db-wins -- NOT
+# UnionDB.list_dir's set-union, which destroys ordering entirely. This
+# is the item the plan (§8) flags as most likely to be got wrong.
+
+def test_union_recent_merge_order_across_two_dbs():
+    db1 = kydb.connect('memory://union_recent_order_db1')
+    db2 = kydb.connect('memory://union_recent_order_db2')
+    union = kydb.connect(
+        'memory://union_recent_order_db1;memory://union_recent_order_db2')
+    folder = '/unittests/test_union_recent_order/'
+    try:
+        # Interleave writes across the two member dbs so mtime order
+        # does not simply match "all of db1 then all of db2" -- that
+        # would pass even with the broken set-union approach.
+        db2[folder + 'b1'] = 'b1'
+        time.sleep(0.01)
+        db1[folder + 'a1'] = 'a1'
+        time.sleep(0.01)
+        db2[folder + 'b2'] = 'b2'
+        time.sleep(0.01)
+        db1[folder + 'a2'] = 'a2'
+
+        assert list(union.recent(folder, limit=10, allow_scan=True)) == \
+            ['a2', 'b2', 'a1', 'b1']
+        oldest_first = union.folder(folder, allow_scan=True).by('mtime')
+        assert list(oldest_first.asc()) == ['b1', 'a1', 'b2', 'a2']
+        # limit() must apply to the merged/deduped stream, not per-db.
+        assert list(union.recent(folder, limit=2, allow_scan=True)) == \
+            ['a2', 'b2']
+    finally:
+        db1.rm_tree(folder)
+        db2.rm_tree(folder)
+
+
+def test_union_recent_dedup_front_db_wins():
+    db1 = kydb.connect('memory://union_recent_dedup_db1')
+    db2 = kydb.connect('memory://union_recent_dedup_db2')
+    union = kydb.connect(
+        'memory://union_recent_dedup_db1;memory://union_recent_dedup_db2')
+    folder = '/unittests/test_union_recent_dedup/'
+    try:
+        # Same key written to both member dbs, db2 (the back db) second
+        # -- so db2's mtime is the more recent one. A naive "keep
+        # whichever entry appears first in a desc-mtime merged stream"
+        # would wrongly pick db2's. front-db-wins must pick db1's
+        # regardless of which db's write is newer.
+        db1[folder + 'shared'] = 'from-db1'
+        time.sleep(0.01)
+        db2[folder + 'shared'] = 'from-db2'
+
+        entries = list(
+            union.folder(folder, allow_scan=True).by('mtime').entries())
+        assert len(entries) == 1
+        assert entries[0].key == 'shared'
+
+        db1_entry = list(
+            db1.folder(folder, allow_scan=True).by('mtime').entries())[0]
+        # The surviving entry's mtime is db1's own -- not db2's more
+        # recent one.
+        assert entries[0].mtime == db1_entry.mtime
+
+        items = dict(
+            union.folder(folder, allow_scan=True).by('mtime').items())
+        assert items == {'shared': 'from-db1'}
+    finally:
+        db1.rm_tree(folder)
+        db2.rm_tree(folder)
+
+
+def test_union_recent_all_scan_members_supported_with_allow_scan():
+    db = get_db('union', '')  # memory;files, per DB_URLS
+    folder = '/unittests/test_union_recent_scan/'
+    try:
+        db.dbs[0][folder + 'obj1'] = 1
+        time.sleep(0.01)
+        db.dbs[1][folder + 'obj2'] = 2
+
+        names = list(db.recent(folder, limit=10, allow_scan=True))
+        assert names == ['obj2', 'obj1']
+    finally:
+        db.rm_tree(folder)
+
+
+def test_union_recent_partial_support_uses_supporting_members_only():
+    _require_dynamodb()
+    dyn = get_db('dynamodb', '')
+    mem = kydb.connect('memory://union_recent_partial_mem')
+    union = kydb.connect(
+        DB_URLS['dynamodb'] + ';memory://union_recent_partial_mem')
+    folder = '/unittests/test_union_recent_partial/'
+    try:
+        dyn[folder + 'd1'] = 'd1'
+        mem[folder + 'm1'] = 'm1'
+
+        # Default (no allow_scan): dynamodb supports natively, memory
+        # doesn't -- union must still work, using only dynamodb's
+        # entries, not raise.
+        names = list(union.folder(folder).by('mtime'))
+        assert names == ['d1']
+
+        # allow_scan=True: both members now contribute.
+        names_scan = set(union.folder(folder, allow_scan=True).by('mtime'))
+        assert names_scan == {'d1', 'm1'}
+    finally:
+        dyn.rm_tree(folder)
+        mem.rm_tree(folder)
+
+
+# --- CacheDB: recency delegates entirely to persist_db (the cache_db
+# only holds what has been individually read, so it cannot answer a
+# folder-wide question) -- matching CacheDB.list_dir.
+
+def test_cache_db_recent_delegates_to_persist_db():
+    db = kydb.connect(
+        'memory://cache_recent_cache|memory://cache_recent_persist')
+    folder = '/unittests/test_cache_recent/'
+    try:
+        for name in ('obj1', 'obj2'):
+            db[folder + name] = name
+            time.sleep(0.01)
+
+        query = db.folder(folder, allow_scan=True)
+        assert query._db is db.persist_db
+
+        names = list(db.recent(folder, limit=10, allow_scan=True))
+        assert names == ['obj2', 'obj1']
+
+        items = dict(
+            db.folder(folder, allow_scan=True).by('mtime').items())
+        assert items == {'obj1': 'obj1', 'obj2': 'obj2'}
+    finally:
+        db.rm_tree(folder)
+
+
+def test_cache_db_recent_raises_without_allow_scan():
+    db = kydb.connect(
+        'memory://cache_recent_raise_cache|'
+        'memory://cache_recent_raise_persist')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/unittests/whatever')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/unittests/whatever', limit=1)

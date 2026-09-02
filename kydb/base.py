@@ -237,24 +237,28 @@ class BaseDB(ObjDBMixin, KYDBInterface):
     def ls(self, folder: str, include_dir=True):
         return list(self.list_dir(folder, include_dir))
 
-    def folder(self, folder: str):
+    def folder(self, folder: str, allow_scan: bool = False):
         """ Implements folder in KYDBInterface
 
         Default: unsupported. Backends with a server-side ordering index
-        (currently DynamoDB, via ``folder-time-index``) override this.
+        (DynamoDB, via ``folder-time-index``; Redis, via a per-folder
+        sorted set) or an opt-in client-side scan (Memory, Files, S3)
+        override this.
         """
         raise IndexNotSupported(
             f'{type(self).__name__} does not support folder()/recent() '
             'recency queries (no server-side ordering index)')
 
-    def recent(self, folder: str, limit: int = None):
+    def recent(self, folder: str, limit: int = None,
+               allow_scan: bool = False):
         """ Implements recent in KYDBInterface
 
-        Sugar for ``db.folder(folder).by('mtime').desc().limit(limit)``.
+        Sugar for
+        ``db.folder(folder, allow_scan=allow_scan).by('mtime').desc().limit(limit)``.
         Relies entirely on ``self.folder()`` -- backends need not override
         this separately.
         """
-        query = self.folder(folder).by('mtime').desc()
+        query = self.folder(folder, allow_scan=allow_scan).by('mtime').desc()
         if limit is not None:
             query = query.limit(limit)
         return query

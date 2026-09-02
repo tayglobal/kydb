@@ -1,10 +1,81 @@
 from kydb.base import BaseDB
+from kydb.exceptions import IndexNotSupported
 from kydb.folder_meta import FolderMetaMixin
+from kydb.query import Entry, FolderQuery
 from redis.exceptions import ResponseError
 import redis
 import boto3
 import os
 import base64
+import time
+
+
+class RedisFolderQuery(FolderQuery):
+    """ FolderQuery backed by a native per-folder Redis sorted set --
+    ``ZADD``/``ZRANGEBYSCORE``/``ZREVRANGEBYSCORE`` on the ``mtime``
+    index, maintained on every write (:meth:`RedisDB.folder_meta_set_raw`)
+    and cleaned up on every delete (:meth:`RedisDB.delete_raw`).
+
+    This is the one backend below DynamoDB that is genuinely native --
+    unlike Memory/Files/S3 it does not require ``allow_scan=True``.
+
+    ``ctime`` is tracked the same way DynamoDB does it -- set once via
+    ``HSETNX`` (Redis's own ``if_not_exists``) and never touched again by
+    a rewrite -- in a companion hash so it survives independently of the
+    sorted set's score.
+
+    Unlike every other backend here, ``mtime``/``ctime`` are
+    milliseconds since the epoch, not nanoseconds: a Redis sorted-set
+    score is a double, which cannot exactly represent a ~19-digit
+    nanosecond timestamp (doubles are only exact up to 2**53), so a
+    nanosecond score would silently round -- and did, when this was
+    tried, making ``entries().mtime`` disagree by up to ~100ns with the
+    exact integer stored for ``ctime``. Milliseconds since the epoch
+    (~1.8e12 today) stay comfortably inside the exact range, at the
+    documented cost of coarser (millisecond) ordering resolution.
+    """
+
+    _SUPPORTED_INDEXES = ('mtime',)
+
+    def _full_folder(self) -> str:
+        # Matches the (no trailing slash) folder key format already used
+        # by folder_meta_set_raw's `self.connection.hset(folder, ...)`.
+        full = self._db._ensure_slashes(self._db._get_full_path(self._folder))
+        return full[:-1]
+
+    def entries(self):
+        if self._index_name not in self._SUPPORTED_INDEXES:
+            raise IndexNotSupported(
+                "Redis folder query only supports by('mtime'), got "
+                f"by({self._index_name!r})")
+
+        folder = self._full_folder()
+        mtime_key = RedisDB._mtime_key(folder)
+        ctime_key = RedisDB._ctime_key(folder)
+        conn = self._db.connection
+
+        min_score = self._since_ts if self._since_ts is not None else '-inf'
+        kwargs = {'withscores': True}
+        if self._limit_n is not None:
+            kwargs['start'] = 0
+            kwargs['num'] = self._limit_n
+
+        if self._ascending:
+            raw = conn.zrangebyscore(mtime_key, min_score, '+inf', **kwargs)
+        else:
+            raw = conn.zrevrangebyscore(mtime_key, '+inf', min_score, **kwargs)
+
+        if not raw:
+            return
+
+        members = [member for member, _score in raw]
+        ctimes = conn.hmget(ctime_key, members)
+
+        for (member, score), ctime_raw in zip(raw, ctimes):
+            name = member.decode() if isinstance(member, bytes) else member
+            mtime = int(score)
+            ctime = int(ctime_raw) if ctime_raw is not None else mtime
+            yield Entry(key=name, mtime=mtime, ctime=ctime)
 
 
 class RedisDB(FolderMetaMixin, BaseDB):
@@ -88,10 +159,46 @@ class RedisDB(FolderMetaMixin, BaseDB):
         self.connection.hset(folder, obj, '.')
         self.connection.set(key, value)
 
+        if not self._is_folder_meta(obj):
+            # Directories are excluded from the recency index: no entry
+            # is ever added to the sorted set for `.folder-*` marker
+            # records, matching DynamoDB's sparse-index behaviour.
+            #
+            # Milliseconds, not time.time_ns() -- see RedisFolderQuery's
+            # docstring: a ZSET score is a double, which cannot exactly
+            # hold a nanosecond epoch timestamp.
+            now_ms = time.time_ns() // 1_000_000
+            self.connection.zadd(self._mtime_key(folder), {obj: now_ms})
+            # HSETNX is Redis's native if_not_exists: ctime is set once,
+            # on first write, and a rewrite leaves it untouched.
+            self.connection.hsetnx(self._ctime_key(folder), obj, now_ms)
+
     def delete_raw(self, key: str):
         self.connection.delete(key)
         folder, obj = key.rsplit('/', 1)
         self.connection.hdel(folder, obj)
+        self.connection.zrem(self._mtime_key(folder), obj)
+        self.connection.hdel(self._ctime_key(folder), obj)
+
+    @staticmethod
+    def _mtime_key(folder: str) -> str:
+        return folder + ':mtime-index'
+
+    @staticmethod
+    def _ctime_key(folder: str) -> str:
+        return folder + ':ctime-index'
+
+    def folder(self, folder: str, allow_scan: bool = False) \
+            -> RedisFolderQuery:
+        """ Implements folder in KYDBInterface, backed by a native
+        per-folder sorted set (see :class:`RedisFolderQuery`).
+
+        ``allow_scan`` is accepted for signature consistency with the
+        other backends but is a no-op here: Redis's sorted set is a
+        genuinely native ordering index, so there is no scan fallback to
+        opt into.
+        """
+        return RedisFolderQuery(self, folder, allow_scan=allow_scan)
 
     def list_dir_meta_folder(self, folder: str, page_size: int):
         folder = self._ensure_slashes(folder)[:-1]

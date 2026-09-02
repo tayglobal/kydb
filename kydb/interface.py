@@ -97,11 +97,18 @@ i.e. the below are illegal and would raise KeyError
         """
         raise NotImplementedError()
 
-    def folder(self, folder: str) -> 'FolderQuery':
+    def folder(self, folder: str, allow_scan: bool = False) -> 'FolderQuery':
         """ Build a lazy recency (or other index) query on a folder.
 
         :param folder: The folder to query. Same folder-relative
                        semantics as ``list_dir``.
+        :param allow_scan: Opt into an O(n) client-side scan-and-sort on
+                       backends with no server-side ordering index
+                       (Memory, Files, S3). Ignored (there is no scan
+                       fallback to opt into) on backends with a native
+                       index -- DynamoDB and Redis -- and on backends
+                       that are unsupported outright (HTTP/HTTPS), which
+                       always raise regardless of this flag.
         :returns: A :class:`kydb.query.FolderQuery` -- a lazy, immutable
                   query builder. Each chained call returns a new query,
                   so the object can be safely reused/branched.
@@ -110,33 +117,40 @@ i.e. the below are illegal and would raise KeyError
         indexed, so recency queries only ever return objects.
 
         Backends without a server-side ordering index raise
-        ``IndexNotSupported``.
+        ``IndexNotSupported`` unless ``allow_scan=True`` is passed.
 
 example::
 
     db.folder('/my/folder').by('mtime').desc().limit(10)   # names, newest first
     db.folder('/my/folder').by('mtime').since(ts).items()  # (name, value) pairs
     db.folder('/my/folder').by('mtime').desc().entries()   # .key, .mtime, .ctime
+    db.folder('/my/folder', allow_scan=True).by('mtime')   # client-side scan
 
         """
         raise IndexNotSupported(
             f'{type(self).__name__} does not support folder()/recent() '
             'recency queries (no server-side ordering index)')
 
-    def recent(self, folder: str, limit: int = None):
+    def recent(self, folder: str, limit: int = None,
+               allow_scan: bool = False):
         """ The most recently modified objects in a folder, newest first.
 
         :param folder: The folder to query.
         :param limit: Optionally cap the number of results.
+        :param allow_scan: Same meaning as on :meth:`folder` -- opt into
+                       an O(n) client-side scan-and-sort on backends
+                       with no server-side ordering index.
         :returns: A lazy generator of names (``str``), newest first.
 
-        Sugar for ``db.folder(folder).by('mtime').desc().limit(limit)``.
+        Sugar for
+        ``db.folder(folder, allow_scan=allow_scan).by('mtime').desc().limit(limit)``.
         Raises ``IndexNotSupported`` on backends without a server-side
-        ordering index.
+        ordering index, unless ``allow_scan=True`` is passed.
 
 example::
 
     db.recent('/my/folder', limit=10)
+    db.recent('/my/folder', limit=10, allow_scan=True)
 
         """
         raise IndexNotSupported(

@@ -63,3 +63,21 @@ def test_http_dict(db):
         'my_datetime': datetime(2020, 8, 30, 2, 5, 0, 580731)
     }
     assert db[key] == val
+
+
+def test_http_recent_unsupported(db):
+    """HTTP/HTTPS stay unsupported outright -- there is no allow_scan
+    escape hatch (unlike memory/files/s3): read-only over plain HTTP
+    GET has no directory listing to scan in the first place.
+    """
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/db/tests')
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.folder('/db/tests', allow_scan=True)
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/db/tests', limit=1)
+
+    with pytest.raises(kydb.IndexNotSupported):
+        db.recent('/db/tests', limit=1, allow_scan=True)

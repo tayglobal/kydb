@@ -1,3 +1,6 @@
+from .exceptions import IndexNotSupported
+
+
 class Entry:
     """ A single result from a :class:`FolderQuery`.
 
@@ -121,3 +124,44 @@ class FolderQuery:
         for entry in self.entries():
             key = self._db._ensure_slashes(self._folder) + entry.key
             yield entry.key, self._db.read(key)
+
+
+class ScanFolderQuery(FolderQuery):
+    """ Generic client-side scan-and-sort ``FolderQuery``, for backends
+    with no server-side ordering index (Memory, Files, S3).
+
+    Only reached behind the ``allow_scan=True`` opt-in -- by the time one
+    of these is constructed, the backend's ``folder()`` has already
+    decided the O(n) scan cost is the caller's explicit choice.
+
+    Subclasses implement :meth:`_raw_entries`, yielding every
+    ``(name, mtime, ctime)`` triple for the objects directly in the
+    folder (never directories), in any order. This base class applies
+    ``since()``, sorts by ``asc()``/``desc()``, and applies ``limit()``.
+    """
+
+    _SUPPORTED_INDEXES = ('mtime',)
+
+    def _raw_entries(self):
+        """ Yield ``(name, mtime, ctime)`` triples for the objects
+        directly in the folder. To be implemented by derived class.
+        """
+        raise NotImplementedError()
+
+    def entries(self):
+        if self._index_name not in self._SUPPORTED_INDEXES:
+            raise IndexNotSupported(
+                f"{type(self._db).__name__} scan query only supports "
+                f"by('mtime'), got by({self._index_name!r})")
+
+        rows = list(self._raw_entries())
+        if self._since_ts is not None:
+            rows = [r for r in rows if r[1] >= self._since_ts]
+
+        rows.sort(key=lambda r: r[1], reverse=not self._ascending)
+
+        if self._limit_n is not None:
+            rows = rows[:self._limit_n]
+
+        for name, mtime, ctime in rows:
+            yield Entry(key=name, mtime=mtime, ctime=ctime)
