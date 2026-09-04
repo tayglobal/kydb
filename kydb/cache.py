@@ -81,6 +81,26 @@ class CacheDB(KYDBInterface, ObjDBMixin):
         self.cache_db[key] = value
         self.persist_db[key] = value
 
+    def set(self, key: str, value, system_obj=False, *, index=None):
+        """Write the item in both cache_db and persist_db, recording any
+        user index values on persist_db only.
+
+        The two dbs do not play the same role here. ``persist_db`` is
+        the authority -- it is where ``list_dir``, ``folder()`` and
+        ``recent()`` already read from, because the cache only holds
+        what someone happened to read -- so it is the only db whose
+        index can answer a folder-wide question. Writing the values into
+        ``cache_db`` as well would build a second, permanently partial
+        index that nothing ever queries, and would fail outright when
+        the cache is a backend with no index support at all.
+
+        Warning: if cache_db writes successfully and persist_db fails
+        the two dbs will be out of sync -- persist_db is written first
+        so that a failure there leaves nothing cached to hide it.
+        """
+        self.persist_db.set(key, value, system_obj, index=index)
+        self.cache_db.set(key, value, system_obj)
+
     def delete(self, key: str):
         """Delete the item in both cache_db and persist_db
 
@@ -180,7 +200,7 @@ class CacheDB(KYDBInterface, ObjDBMixin):
         self.cache_db.clear_cache()
         self.persist_db.clear_cache()
 
-    def set_raw(self, key: str, value):
+    def set_raw(self, key: str, value, index=None):
         """
         Set data from the DB based on key.
 
@@ -188,6 +208,16 @@ class CacheDB(KYDBInterface, ObjDBMixin):
 
         :param key: str:  The key to set, including base_path.
         :param value: The raw, pickled data.
+        :param index: Optional ``{name: int or None}`` of user index
+                      values, recorded on ``persist_db`` only -- for the
+                      same reason :meth:`folder` reads from there. This
+                      is the path a ``DbObj`` write takes
+                      (``ObjDBMixin.write_dbobj`` calls ``obj.db.set_raw``
+                      directly), so it has to carry the index too or an
+                      indexed ``DbObj`` would be written unindexed.
         """
-        self.persist_db.set_raw(key, value)
+        if index:
+            self.persist_db.set_raw(key, value, index=index)
+        else:
+            self.persist_db.set_raw(key, value)
         self.cache_db.set_raw(key, value)

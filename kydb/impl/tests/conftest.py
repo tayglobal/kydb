@@ -58,6 +58,7 @@ def local_services():
                     {"AttributeName": "path", "AttributeType": "S"},
                     {"AttributeName": "folder", "AttributeType": "S"},
                     {"AttributeName": "mtime", "AttributeType": "N"},
+                    {"AttributeName": "class_date", "AttributeType": "N"},
                 ],
                 ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
                 GlobalSecondaryIndexes=[
@@ -82,6 +83,28 @@ def local_services():
                         "Projection": {
                             "ProjectionType": "INCLUDE",
                             "NonKeyAttributes": ["ctime"],
+                        },
+                        "ProvisionedThroughput": {
+                            "ReadCapacityUnits": 5,
+                            "WriteCapacityUnits": 5,
+                        },
+                    },
+                    # A user index, per ``user_index_plan.md`` section 9:
+                    # one sparse GSI per index name, ``folder`` HASH and
+                    # the index name as a Number RANGE.  ``mtime``/``ctime``
+                    # are projected so entries() can report them from the
+                    # index page alone -- no per-item read.  ``class_date``
+                    # is the gym-booking example the acceptance test uses.
+                    {
+                        "IndexName": "folder-class_date-index",
+                        "KeySchema": [
+                            {"AttributeName": "folder", "KeyType": "HASH"},
+                            {"AttributeName": "class_date",
+                             "KeyType": "RANGE"},
+                        ],
+                        "Projection": {
+                            "ProjectionType": "INCLUDE",
+                            "NonKeyAttributes": ["mtime", "ctime"],
                         },
                         "ProvisionedThroughput": {
                             "ReadCapacityUnits": 5,

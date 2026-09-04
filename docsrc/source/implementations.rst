@@ -27,6 +27,13 @@ DynamoDB
     #. An index ``folder-time-index`` with partition key ``folder`` and
        sort key ``mtime`` (Number), projection ``INCLUDE`` with
        non-key attribute ``ctime``
+    #. Per business key written with ``set(..., index={'<name>': 1})``,
+       an index ``folder-<name>-index`` with partition key ``folder`` and
+       sort key ``<name>`` (Number), projection ``INCLUDE`` with non-key
+       attributes ``mtime`` and ``ctime`` -- for example
+       ``folder-class_date-index`` for ``by('class_date')``. ``<name>``
+       must also appear in the table's ``AttributeDefinitions`` as a
+       Number.
 
     Only the first two are needed to read and write. ``folder-time-index``
     serves :meth:`~kydb.interface.KYDBInterface.folder` /
@@ -39,6 +46,16 @@ DynamoDB
     existed carry no ``mtime``, and are reported at ``mtime == 0``,
     ordered after everything indexed; each one moves into place the first
     time it is rewritten.
+
+    The business-key indexes are equally optional, and are never needed to
+    *write* one: ``update_item`` just sets an attribute. An application can
+    start recording values before the index exists, and they are all there
+    when it is added. Until then only ``by('<name>')`` fails, with an
+    ``IndexNotSupported`` naming the index to create; ``allow_scan=True``
+    cannot serve it, because ``folder-index`` projects no user attribute.
+    Each of these indexes is sparse, so an object written with no value
+    for it simply is not in it. DynamoDB allows 20 GSIs per table, two of
+    which are kydb's own, leaving 18 business keys.
 
 
 Redis

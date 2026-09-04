@@ -33,6 +33,14 @@ For the normal real-service suite, the table must have:
   an `INCLUDE` projection containing `mtime` and `ctime`;
 - a `folder-time-index` global secondary index with `folder` as its hash key,
   `mtime` as its range key, and an `INCLUDE` projection containing `ctime`;
+- a numeric `class_date` attribute and a `folder-class_date-index` global
+  secondary index with `folder` as its hash key, `class_date` as its range
+  key, and an `INCLUDE` projection containing `mtime` and `ctime`.  This is
+  the per-business-key index shape (`folder-<name>-index`, `<name>` as a
+  Number range key) that `db.set(key, value, index={'<name>': 1})` and
+  `db.folder(f).by('<name>')` need; `class_date` is the one the test suite
+  uses.  It is additive and sparse: a table without it keeps working, and
+  only `by('class_date')` fails until it is added;
 - on-demand (`PAY_PER_REQUEST`) billing.
 
 Tag tables at creation with `Purpose=kydb-real-tests` and
@@ -58,6 +66,12 @@ AWS_DEFAULT_REGION=ap-northeast-1 \
 python -m pytest \
   kydb/impl/tests/test_impl.py kydb/impl/tests/test_index_compat.py -vv
 ```
+
+Add `kydb/impl/tests/test_user_index_dynamodb.py` and
+`kydb/tests/test_gym_signups.py` to that list to exercise business keys
+against the real table; both need `folder-class_date-index` to exist.  With
+`KYDB_TEST_LOCAL_SERVICES=''` the local fixtures start nothing, and
+`KYDB_TEST_DB_TYPES=dynamodb` skips the memory and Redis parametrisations.
 
 The completed real-service run on 2026-09-02 reported 64 passed tests and 23
 backend-inapplicable skips across `test_impl.py` and
