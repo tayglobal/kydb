@@ -40,4 +40,5 @@ Find out more
    base_path
    union
    cache_context
+   manual_tests
    developer
