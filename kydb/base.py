@@ -1,4 +1,5 @@
 import pickle
+import re
 from typing import Tuple
 import os
 from .objdb import ObjDBMixin
@@ -11,6 +12,32 @@ import yaml
 
 class BaseDB(ObjDBMixin, KYDBInterface):
     """ Base class for KYDBInterface """
+
+    #: Whether this backend can store caller-supplied index values
+    #: (``set(key, value, index={'class_date': 20260905})``).
+    #:
+    #: ``False`` by default, and deliberately opt-in rather than
+    #: opt-out: a backend with nowhere to put the value -- Files and S3
+    #: have no attribute storage kydb models -- must *raise* rather than
+    #: accept the value and drop it. A silent drop is the one failure
+    #: that reaches production undetected, because every write succeeds
+    #: and only the query comes back empty, long afterwards and
+    #: somewhere else. Making the flag explicit means a backend is loud
+    #: by default instead of loud only if someone remembered a guard.
+    supports_user_index = False
+
+    #: Index names that would collide with the item's own structure.
+    #: An index name becomes a DynamoDB attribute name, part of the
+    #: derived GSI name (``folder-<name>-index``) and part of the Redis
+    #: key (``<folder>:<name>-index``), so these are reserved.
+    #: ``mtime``/``ctime`` are reserved additionally because they are
+    #: maintained by the backend -- letting a caller write their own
+    #: would hand back the clock-skew problem the recency index exists
+    #: to avoid.
+    _RESERVED_INDEX_NAMES = frozenset(
+        {'path', 'folder', 'contents', 'mtime', 'ctime'})
+
+    _INDEX_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
 
     def __init__(self, url: str):
         self.db_type = url.split(':', 1)[0]
@@ -186,17 +213,105 @@ class BaseDB(ObjDBMixin, KYDBInterface):
     def __setitem__(self, key: str, value):
         self.set(key, value)
 
-    def set(self, key: str, value, system_obj=False):
+    def _validate_index(self, index) -> dict:
+        """ Check a caller-supplied ``index`` mapping, before any write.
+
+        :param index: The ``index=`` argument to :meth:`set`, or ``None``.
+        :returns: The mapping, empty if there was nothing to write.
+        :raises ValueError: for an unusable index *name*.
+        :raises TypeError: for an unusable index *value*.
+        :raises IndexNotSupported: if this backend cannot store index
+                                   values at all.
+
+        Names must match ``[A-Za-z][A-Za-z0-9_]*`` and must not be one
+        of :attr:`_RESERVED_INDEX_NAMES`; values must be ``int`` (v1 is
+        deliberately int-only, so one comparison semantic serves every
+        backend -- see ``user_index_plan.md`` §4.2) or ``None``, which
+        means *clear this index value*.
+
+        ``bool`` is rejected explicitly. It is an ``int`` subclass, so
+        it would otherwise sort silently as 0/1, and a boolean landing
+        in a business ordering is almost certainly a mistake at the call
+        site rather than an intent.
+
+        Names and values are checked before the backend-capability
+        check, so a malformed index is reported as malformed on every
+        backend -- it is wrong everywhere, and reporting it as
+        "unsupported here" would send the caller looking in the wrong
+        place.
+        """
+        if not index:
+            return {}
+
+        if not isinstance(index, dict):
+            raise TypeError(
+                'index must be a dict of index name to int value, got '
+                f'{type(index).__name__}')
+
+        for name, value in index.items():
+            if not isinstance(name, str) or \
+                    not self._INDEX_NAME_RE.match(name):
+                raise ValueError(
+                    f'Invalid index name {name!r}: an index name must '
+                    'match [A-Za-z][A-Za-z0-9_]*')
+
+            if name in self._RESERVED_INDEX_NAMES:
+                raise ValueError(
+                    f'Invalid index name {name!r}: reserved, one of '
+                    f'{sorted(self._RESERVED_INDEX_NAMES)}')
+
+            if value is None:
+                # Explicitly clears the value -- see set()'s docstring
+                # on why an unmentioned index is preserved instead.
+                continue
+
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(
+                    f'Index {name!r} must be an int or None, got '
+                    f'{type(value).__name__}')
+
+        if not self.supports_user_index:
+            raise IndexNotSupported(
+                f'{type(self).__name__} cannot store user index values, '
+                f'so set(index={{{", ".join(sorted(index))}: ...}}) would '
+                'silently drop them. Use a backend with index support '
+                '(DynamoDB, Redis, Memory), or encode the value in the '
+                'path')
+
+        return index
+
+    def set(self, key: str, value, system_obj=False, *, index=None):
+        """ Implements set in KYDBInterface.
+
+        ``index`` is a keyword-only mapping of index name to ``int``
+        value, validated by :meth:`_validate_index` before anything is
+        written -- a rejected index must never leave a half-done write
+        behind.
+
+        A rewrite that does not mention an index **preserves** it; pass
+        ``{'name': None}`` to clear one. See
+        :meth:`kydb.interface.KYDBInterface.set`.
+        """
         if not system_obj and \
                 any(x for x in key.rsplit('/') if x.startswith('.')):
             raise KeyError('Cannot have dot (.) prefix in path, '
                            'got :' + key)
 
+        index = self._validate_index(index)
+
         path = self._get_full_path(key)
         self._cache[path] = value
 
         if self.is_dbobj(value):
-            self.write_dbobj(value)
+            # write_dbobj has its own serialisation path (the object's
+            # stored dict plus the metadata to rebuild it), so the index
+            # is threaded through it rather than through _serialise.
+            self.write_dbobj(value, index=index)
+        elif index:
+            # Only passed when there is something to pass, so a backend
+            # that has no index support (and therefore can never reach
+            # here) keeps its two-argument set_raw.
+            self.set_raw(path, self._serialise(value), index=index)
         else:
             self.set_raw(path, self._serialise(value))
 
@@ -211,7 +326,7 @@ class BaseDB(ObjDBMixin, KYDBInterface):
         """
         raise NotImplementedError()
 
-    def set_raw(self, key: str, value):
+    def set_raw(self, key: str, value, index=None):
         """
         Set data from the DB based on key.
 
@@ -219,6 +334,14 @@ class BaseDB(ObjDBMixin, KYDBInterface):
 
         :param key: str:  The key to set, including base_path.
         :param value: The raw, pickled data.
+        :param index: Optional ``{name: int or None}`` of user index
+                      values, already validated by
+                      :meth:`_validate_index`. ``None`` for a value
+                      clears that index; an index absent from the
+                      mapping is left as it was.
+
+        Only backends with ``supports_user_index = True`` are ever
+        passed a non-empty ``index``.
         """
         raise NotImplementedError()
 

@@ -54,7 +54,24 @@ class ObjDBMixin:
         return self.db_obj_new(meta['class_name'],
                                meta['key'], data['data'])
 
-    def write_dbobj(self, obj):
+    def write_dbobj(self, obj, index=None):
+        """ Serialise a :class:`kydb.dbobj.DbObj` and store it.
+
+        ``index`` is the validated ``{name: int or None}`` mapping from
+        :meth:`kydb.base.BaseDB.set`, so a ``DbObj`` can carry business
+        keys exactly as a plain value can::
+
+            booking = db.new('Booking', '/signups/anna')
+            db.set(booking.key, booking, index={'class_date': 20260905})
+
+        The value is pickled here rather than by ``BaseDB._serialise``
+        -- a ``DbObj`` is stored as its ``get_stored_dict()`` plus the
+        metadata needed to rebuild it -- which is why the index has to
+        be threaded through this path explicitly. It is passed on only
+        when there is something to pass, so a backend that never
+        supports index values keeps being called with the two-argument
+        ``set_raw`` it has always implemented.
+        """
         data = {
             IS_DB_OBJ: True,
             'meta': {
@@ -63,4 +80,9 @@ class ObjDBMixin:
             },
             'data': obj.get_stored_dict()
         }
-        obj.db.set_raw(self._get_full_path(obj.key), pickle.dumps(data))
+        path = self._get_full_path(obj.key)
+        raw = pickle.dumps(data)
+        if index:
+            obj.db.set_raw(path, raw, index=index)
+        else:
+            obj.db.set_raw(path, raw)

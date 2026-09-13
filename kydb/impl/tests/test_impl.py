@@ -1257,26 +1257,54 @@ def test_recent_mtime_is_exact_nanoseconds(db_type):
     """
     db = get_db(db_type, '')
     folder = '/unittests/test_mtime_exact_ns/'
+    # A nanosecond timestamp near 1.77e18 sits between 2**60 and 2**61,
+    # where a double's ulp is 256. The guard below proves precision by
+    # showing the value is *not* one a double could hold exactly -- but a
+    # genuine clock lands on a multiple of 256 about once every 256
+    # writes, and such a value is indistinguishable from a rounded one.
+    # So write again rather than fail on an unlucky draw. A value that
+    # really had been through a score would be a multiple of the ulp
+    # *every* time, so exhausting the attempts is itself the failure and
+    # the guard keeps its full force. Eight attempts leaves a false
+    # failure at (1/256)**8, about 3e-20.
+    attempts = 8
     try:
-        before = time.time_ns()
-        db[folder + 'obj1'] = 1
-        after = time.time_ns()
+        # ctime is written once, on the first write, and a rewrite must
+        # leave it untouched -- so it is bracketed by the whole loop
+        # rather than by the iteration that happens to end it.
+        first_before = time.time_ns()
 
-        # allow_scan is a no-op on the natively-indexed backends and is
-        # what Memory requires; passing it uniformly keeps this test
-        # about timestamp precision rather than about capability.
-        query = db.folder(folder, allow_scan=True)
-        assert_eventually_equal(
-            lambda: list(query.by('mtime').desc()), ['obj1'])
-        entry = list(query.by('mtime').desc().entries())[0]
+        for _ in range(attempts):
+            before = time.time_ns()
+            db[folder + 'obj1'] = 1
+            after = time.time_ns()
 
-        assert isinstance(entry.mtime, int)
-        assert isinstance(entry.ctime, int)
-        # Nanoseconds, not milliseconds/seconds: bracketed by the write.
-        assert before <= entry.mtime <= after
-        assert before <= entry.ctime <= after
-        # Guard the actual failure mode: a value that has been through a
-        # double would not survive this comparison.
-        assert int(float(entry.mtime)) != entry.mtime or entry.mtime < 2 ** 53
+            # allow_scan is a no-op on the natively-indexed backends and
+            # is what Memory requires; passing it uniformly keeps this
+            # test about timestamp precision rather than about
+            # capability.
+            query = db.folder(folder, allow_scan=True)
+            assert_eventually_equal(
+                lambda: list(query.by('mtime').desc()), ['obj1'])
+            entry = list(query.by('mtime').desc().entries())[0]
+
+            assert isinstance(entry.mtime, int)
+            assert isinstance(entry.ctime, int)
+            # Nanoseconds, not milliseconds/seconds: bracketed by the
+            # write that produced them.
+            assert before <= entry.mtime <= after
+            assert first_before <= entry.ctime <= after
+
+            # Guard the actual failure mode: a value that has been
+            # through a double would not survive this comparison.
+            if int(float(entry.mtime)) != entry.mtime:
+                break
+        else:
+            pytest.fail(
+                f'{db_type}: mtime was exactly representable as a double '
+                f'on all {attempts} writes ({entry.mtime}). A real '
+                'nanosecond clock would not be, so the value is being '
+                'read back off something that rounded it -- a sorted-set '
+                'score, most likely.')
     finally:
         db.rm_tree(folder)

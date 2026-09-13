@@ -49,6 +49,7 @@ pip install kydb
 | **Cache context** | Scope in-memory caching to a block, so live market data reprices while static data stays cached. |
 | **Store any Python object** | Anything pickleable, or use the `DbObj` decorators for refactor-proof, field-level control. |
 | **Recency queries** | `db.recent('/articles', limit=10)` — server-side ordered indexes on DynamoDB and Redis. |
+| **Business keys** | `db.set(key, v, index={'class_date': 20260905})`, then `db.folder(f).by('class_date')` — order by what an object means, not when it was written. |
 
 ## Databases in one line each
 
@@ -213,6 +214,35 @@ Objects written before the index existed are reported honestly at
 they are rewritten. No migration is required. See the
 [recency documentation](https://kydb.readthedocs.io/en/latest/recency.html)
 for the full ordering contract and the DynamoDB schema.
+
+## Business keys: order by what an object *means*
+
+`mtime` answers *when was this written*. A gym takes a booking on Tuesday for
+Saturday's 18:30 HIIT class — and the roster the front desk needs every
+morning is ordered by the class date, not by when the phone rang.
+
+Record a business key on the write, and query it with the same builder:
+
+```python
+db.set('/signups/anna', booking, index={'class_date': 20260905})
+
+# who is booked into Saturday's classes — one indexed query
+db.folder('/signups').by('class_date').since(20260905).until(20260905).items()
+
+# rebooking Anna to Monday: one write, and her key never moves
+db.set('/signups/anna', booking, index={'class_date': 20260907})
+
+# and mtime still answers its own question, unchanged
+db.recent('/signups', limit=10)          # who booked most recently
+```
+
+Values are `int` (a date is `int(d.strftime('%Y%m%d'))`), both bounds are
+inclusive, and a rewrite that does not mention an index preserves it —
+`index={'class_date': None}` is how you clear one. The index is strictly
+sparse: an object with no `class_date` is not a badly-dated booking, it is
+not a booking, so it appears in no roster. DynamoDB serves each business key
+from its own `folder-<name>-index` GSI; Redis and Memory need no schema at
+all.
 
 ## Refactor-proof objects with `DbObj`
 

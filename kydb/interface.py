@@ -59,17 +59,58 @@ i.e. the below are illegal and would raise KeyError
         """
         raise NotImplementedError()
 
-    def set(self, key: str, value, system_obj=False):
+    def set(self, key: str, value, system_obj=False, *, index=None):
         """Set data from the DB based on key
 
         :param key: str:  The key to set.
         :param value:  The python object
         :param system_obj: bool: True if a system object
+        :param index: dict: Optional, keyword-only mapping of index name
+                      to index value, recording business keys the object
+                      can later be queried and ordered by::
+
+                          db.set('/signups/anna', booking,
+                                 index={'class_date': 20260905})
+
+                          db.folder('/signups').by('class_date') \\
+                            .since(20260905).until(20260905).items()
 
         Same as __setitem__ except it can write system objects
-        i.e. object with a (.) dot prefix.
+        i.e. object with a (.) dot prefix, and can record index values.
 
         Note: only use this if you know what you're doing
+
+**Index values are ``int``, and only ``int``.**
+A date is ``int(d.strftime('%Y%m%d'))``, a datetime an epoch value, a
+rank or priority already numeric. Restricting v1 to integers buys one
+comparison semantic across every backend: a Redis sorted-set score is a
+double, so ordering strings would need a parallel lexicographic read
+path with different bound semantics on the same builder. ``bool`` is
+rejected explicitly -- it is an ``int`` subclass, and a boolean in a
+business ordering is a mistake, not an intent. A bad value raises
+``TypeError`` naming the index; a bad or reserved name (``path``,
+``folder``, ``contents``, ``mtime``, ``ctime``, or anything not
+matching ``[A-Za-z][A-Za-z0-9_]*``) raises ``ValueError``. Both are
+raised before anything is written.
+
+**A rewrite preserves index values it does not mention.**
+::
+
+    db.set('/signups/anna', rec, index={'class_date': 20260905})
+    db.set('/signups/anna', updated_rec)                       # still 20260905
+    db.set('/signups/anna', rec, index={'class_date': None})   # now cleared
+
+The alternative -- an unmentioned index is cleared -- would mean every
+incidental rewrite anywhere in an application silently drops the object
+out of the index. Clearing is therefore explicit, with ``None``.
+
+**Backends that cannot store index values raise.**
+Files and S3 have nowhere to put a caller-supplied attribute that the
+rest of kydb models, so ``set(index=...)`` raises
+``IndexNotSupported`` there rather than accepting the value and
+discarding it. Accepting-and-discarding is the one behaviour that lets a
+bug reach production undetected: the writes all succeed, and only the
+query -- later, elsewhere -- comes back empty.
         """
         raise NotImplementedError()
 
@@ -131,6 +172,19 @@ i.e. the below are illegal and would raise KeyError
         ``since(ts)`` with ``ts > 0``. No migration is needed, and each
         such object moves into place the first time it is rewritten.
 
+        **User indexes are strictly sparse -- no epoch tail.** An object
+        with no value for the queried *user* index does not appear at
+        all, in either direction, and no fallback read of ``list_dir``
+        is made. This is the deliberate difference from the ``mtime``
+        behaviour described above: a missing write time still means
+        something -- *older than anything tracked* -- whereas a missing
+        ``class_date`` does not mean the object is a signup for an
+        infinitely distant past class, it means it is not a signup at
+        all. Fabricating a position for it would put junk in every
+        business query. A pleasant consequence is that user indexes are
+        *cheaper* than ``mtime``: ``asc()`` carries no O(folder) penalty,
+        because there is no epoch tail to discover first.
+
         **Switching the index off.** Setting ``mtime-index: false`` in
         the per-db kydb config stops the index being maintained on
         write. ``folder()`` and ``recent()`` then raise
@@ -138,12 +192,24 @@ i.e. the below are illegal and would raise KeyError
         that -- with nothing recording timestamps there is nothing to
         sort by.
 
+        It gates ``mtime`` and only ``mtime``. The check runs when the
+        query runs, not when ``folder()`` builds it, because ``by()`` is
+        chained onto the object ``folder()`` returns -- so ``folder()``
+        cannot yet know which index was wanted. ``by('<user index>')``
+        keeps working: a business key is a value the caller supplied and
+        stored on the object, not a timestamp the backend stamped, so
+        the setting has nothing to say about it. ``set(index={...})``
+        records values throughout for the same reason.
+
 example::
 
     db.folder('/my/folder').by('mtime').desc().limit(10)   # names, newest first
     db.folder('/my/folder').by('mtime').since(ts).items()  # (name, value) pairs
     db.folder('/my/folder').by('mtime').desc().entries()   # .key, .mtime, .ctime
     db.folder('/my/folder', allow_scan=True).by('mtime')   # client-side scan
+
+    # a closed range -- both bounds inclusive, so this is one exact day
+    db.folder('/signups').by('class_date').since(20260905).until(20260905)
 
         """
         raise IndexNotSupported(

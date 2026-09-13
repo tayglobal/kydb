@@ -51,13 +51,36 @@ class FolderMetaMixin:
     def rmdir_raw(self, folder: str):
         return self.delete_raw(self._folder_meta_path(folder))
 
-    def set_raw(self, key: str, value):
+    def set_raw(self, key: str, value, index=None):
+        """ Write an object, creating its folder-meta records first.
+
+        ``index`` (user-supplied index values) is forwarded to
+        :meth:`folder_meta_set_raw` for the object itself only. The
+        ``.folder-*`` marker records written by ``mkdir_raw`` never
+        carry index values -- directories are not objects and must stay
+        out of every index, which is the same sparseness that keeps them
+        out of the ``mtime`` index (``additional_index_plan.md`` §5).
+        """
         key = self._ensure_slashes(key)[:-1]
         folder = key.rsplit('/', 1)[0]
 
         if folder:
             self.mkdir_raw(folder)
-        self.folder_meta_set_raw(key, value)
 
-    def folder_meta_set_raw(self, key: str, value):
+        if index:
+            # Passed only when there is something to pass: a backend
+            # without user index support can never produce a non-empty
+            # index (BaseDB.set raises first), so its two-argument
+            # folder_meta_set_raw keeps working untouched.
+            self.folder_meta_set_raw(key, value, index=index)
+        else:
+            self.folder_meta_set_raw(key, value)
+
+    def folder_meta_set_raw(self, key: str, value, index=None):
+        """ Write the object itself. To be implemented by derived class.
+
+        :param index: ``{name: int or None}`` user index values, or
+                      ``None``. Only ever non-empty on a backend with
+                      ``supports_user_index = True``.
+        """
         raise NotImplementedError()
