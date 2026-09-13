@@ -4,6 +4,19 @@ Everything here runs against Moto -- a real table is not required, and
 every behaviour asserted is documented DynamoDB semantics rather than an
 emulator quirk (plan section 8). The fixture table in ``conftest.py``
 carries ``folder-class_date-index``, the one GSI these queries need.
+
+It also has to pass against a *real* table, and that is where the two
+differ: Moto applies index updates synchronously, while a real global
+secondary index is eventually consistent and cannot be read any other
+way -- ``ConsistentRead`` is rejected on a GSI outright. A query issued
+immediately after a write may legitimately return nothing yet.
+
+So every test that writes and then reads through an index settles it
+first, with the same ``assert_eventually_equal`` helper ``test_impl.py``
+uses for the mtime index. The settle is the *first* read only; the
+assertions that follow are deliberately not retried, because a test that
+retried them would go on passing if a query returned something wrong
+that a later read happened to correct.
 """
 import os
 import time
@@ -13,6 +26,7 @@ import pytest
 
 import kydb
 from kydb.exceptions import IndexNotSupported
+from test_impl import assert_eventually_equal
 
 
 DB_URL = 'dynamodb://' + os.environ.get(
@@ -79,7 +93,7 @@ def test_write_and_query_round_trip():
         db.set(folder + 'bob', {'cls': 'yoga'}, index={'class_date': DAY2})
 
         q = db.folder(folder).by('class_date')
-        assert list(q.asc()) == ['anna', 'bob']
+        assert_eventually_equal(lambda: list(q.asc()), ['anna', 'bob'])
         assert dict(q.since(DAY1).until(DAY1).items()) == \
             {'anna': {'cls': 'hiit'}}
     finally:
@@ -112,7 +126,8 @@ def test_folder_meta_records_carry_no_index_value():
     folder = '/unittests/uidx_no_dir/sub/'
     try:
         db.set(folder + 'anna', 1, index={'class_date': DAY1})
-        assert list(db.folder(folder).by('class_date')) == ['anna']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date')), ['anna'])
 
         parent = db._get_full_path('/unittests/uidx_no_dir/')
         meta = db.table.get_item(
@@ -131,6 +146,12 @@ def test_user_index_is_sparse_desc():
     try:
         db.set(folder + 'anna', 1, index={'class_date': DAY1})
         db[folder + 'walkin'] = 2          # no class_date at all
+
+        # Settle outside the instrumented section, so the call counts
+        # below still describe exactly one query.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date').desc()),
+            ['anna'])
 
         query_calls, get_item_calls, restore = _counting(db)
         try:
@@ -159,6 +180,10 @@ def test_user_index_is_sparse_asc():
     try:
         db.set(folder + 'anna', 1, index={'class_date': DAY1})
         db[folder + 'walkin'] = 2
+
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date').asc()),
+            ['anna'])
 
         query_calls, _get_item_calls, restore = _counting(db)
         try:
@@ -196,7 +221,9 @@ def test_mtime_query_still_sees_an_object_written_with_an_index():
     try:
         db.set(folder + 'anna', 1, index={'class_date': DAY1})
         db[folder + 'walkin'] = 2
-        assert sorted(db.folder(folder).by('mtime')) == ['anna', 'walkin']
+        assert_eventually_equal(
+            lambda: sorted(db.folder(folder).by('mtime')),
+            ['anna', 'walkin'])
     finally:
         db.rm_tree(folder)
 
@@ -212,7 +239,7 @@ def test_since_until_and_between():
         db.set(folder + 'cid', 3, index={'class_date': DAY3})
 
         q = db.folder(folder).by('class_date').asc()
-        assert list(q) == ['anna', 'bob', 'cid']
+        assert_eventually_equal(lambda: list(q), ['anna', 'bob', 'cid'])
         assert list(q.since(DAY2)) == ['bob', 'cid']
         assert list(q.until(DAY2)) == ['anna', 'bob']
         assert list(q.since(DAY2).until(DAY3)) == ['bob', 'cid']
@@ -236,11 +263,13 @@ def test_ordering_both_directions():
         db.set(folder + 'bob', 2, index={'class_date': DAY2})
 
         q = db.folder(folder).by('class_date')
-        assert list(q.asc()) == ['anna', 'bob', 'cid']
+        assert_eventually_equal(
+            lambda: list(q.asc()), ['anna', 'bob', 'cid'])
         assert list(q.desc()) == ['cid', 'bob', 'anna']
         # ...whereas mtime reports the order they were written in.
-        assert list(db.folder(folder).by('mtime').asc()) == \
-            ['cid', 'anna', 'bob']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime').asc()),
+            ['cid', 'anna', 'bob'])
     finally:
         db.rm_tree(folder)
 
@@ -259,8 +288,10 @@ def test_until_on_mtime_closes_the_range():
         db[folder + 'second'] = 2
 
         q = db.folder(folder).by('mtime').asc()
-        assert list(q.since(1).until(cutoff)) == ['first']
-        assert list(q.since(cutoff)) == ['second']
+        assert_eventually_equal(
+            lambda: list(q.since(1).until(cutoff)), ['first'])
+        assert_eventually_equal(
+            lambda: list(q.since(cutoff)), ['second'])
     finally:
         db.rm_tree(folder)
 
@@ -276,8 +307,10 @@ def test_rewrite_without_index_preserves_the_value():
         db[folder + 'anna'] = {'v': 3}               # nor via __setitem__
 
         assert db.read(folder + 'anna', reload=True) == {'v': 3}
-        assert list(db.folder(folder).by('class_date')
-                    .since(DAY1).until(DAY1)) == ['anna']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date')
+                         .since(DAY1).until(DAY1)),
+            ['anna'])
     finally:
         db.rm_tree(folder)
 
@@ -291,8 +324,12 @@ def test_rewrite_with_a_new_value_moves_the_object():
         db.set(folder + 'anna', 1, index={'class_date': DAY2})
 
         q = db.folder(folder).by('class_date')
+        # Settle on the arrival at DAY2 rather than the departure from
+        # DAY1: an index that has not caught up yet also reports DAY1
+        # empty, so waiting on the empty result would prove nothing.
+        assert_eventually_equal(
+            lambda: list(q.since(DAY2).until(DAY2)), ['anna'])
         assert list(q.since(DAY1).until(DAY1)) == []
-        assert list(q.since(DAY2).until(DAY2)) == ['anna']
     finally:
         db.rm_tree(folder)
 
@@ -307,10 +344,15 @@ def test_none_clears_the_value_and_drops_the_row():
         item = db.table.get_item(
             Key={'path': db._get_full_path(folder + 'anna')})['Item']
         assert 'class_date' not in item
-        assert list(db.folder(folder).by('class_date')) == []
         # The object itself is untouched, and still in the mtime index.
         assert db.read(folder + 'anna', reload=True) == 1
-        assert list(db.folder(folder).by('mtime')) == ['anna']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime')), ['anna'])
+        # Settled above via the mtime index, which the same write
+        # touched, so the user index has had the same chance to catch
+        # up before this asserts the row is gone from it.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date')), [])
     finally:
         db.rm_tree(folder)
 
@@ -368,6 +410,10 @@ def test_entries_expose_index_value_and_a_real_mtime():
         db.set(folder + 'bob', 2, index={'class_date': DAY2})
         after = time.time_ns()
 
+        assert_eventually_equal(
+            lambda: [e.key for e in
+                     db.folder(folder).by('class_date').asc().entries()],
+            ['anna', 'bob'])
         entries = list(db.folder(folder).by('class_date').asc().entries())
         assert [e.key for e in entries] == ['anna', 'bob']
         assert [e.index_value for e in entries] == [DAY1, DAY2]
@@ -388,6 +434,9 @@ def test_mtime_entries_still_report_index_value_as_mtime():
     folder = '/unittests/uidx_mtime_entries/'
     try:
         db[folder + 'anna'] = 1
+        assert_eventually_equal(
+            lambda: [e.key for e in db.folder(folder).by('mtime').entries()],
+            ['anna'])
         entry, = db.folder(folder).by('mtime').entries()
         assert entry.index_value == entry.mtime
     finally:
@@ -404,6 +453,11 @@ def test_entries_does_not_refetch_per_item():
     try:
         for i in range(5):
             db.set(folder + f'obj{i}', i, index={'class_date': DAY1 + i})
+
+        expected = ['obj4', 'obj3', 'obj2', 'obj1', 'obj0']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date').desc()),
+            expected)
 
         query_calls, get_item_calls, restore = _counting(db)
         try:
@@ -428,6 +482,12 @@ def test_limit_pages_lazily():
         for i in range(5):
             db.set(folder + f'obj{i}', i, index={'class_date': DAY1 + i})
 
+        # limit(2) would be satisfied by a partially-built index, so
+        # settle on the full unlimited result before counting pages.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date').desc()),
+            ['obj4', 'obj3', 'obj2', 'obj1', 'obj0'])
+
         query_calls, get_item_calls, restore = _counting(db)
         try:
             names = list(db.folder(folder).by('class_date').desc().limit(2))
@@ -439,6 +499,88 @@ def test_limit_pages_lazily():
         assert len(query_calls) == 1
         assert query_calls[0]['Limit'] == 2
         assert query_calls[0]['ScanIndexForward'] is False
+    finally:
+        db.rm_tree(folder)
+
+
+# --- inverted ranges ----------------------------------------------------
+
+def test_inverted_range_is_empty_without_issuing_a_query():
+    """``since(hi).until(lo)`` selects nothing and must say so quietly.
+
+    The assertion that matters is the call count, not the empty list.
+    DynamoDB rejects ``BETWEEN hi AND lo`` with a ValidationException
+    rather than matching nothing, so the only way to honour the
+    documented "empty rather than raising" contract is to never build
+    the query -- and Moto accepts the inverted range and returns
+    nothing, so an emptiness-only assertion passes here whether or not
+    the bug is present. This one fails on Moto too.
+    """
+    db = get_db()
+    folder = '/unittests/uidx_inverted/'
+    try:
+        db.set(folder + 'anna', 1, index={'class_date': DAY1})
+        db.set(folder + 'bob', 2, index={'class_date': DAY3})
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date').asc()),
+            ['anna', 'bob'])
+
+        q = db.folder(folder).by('class_date')
+        query_calls, get_item_calls, restore = _counting(db)
+        try:
+            assert list(q.since(DAY3).until(DAY1)) == []
+            assert list(q.desc().since(DAY3).until(DAY1)) == []
+            assert list(q.since(DAY3).until(DAY1).entries()) == []
+            assert dict(q.since(DAY3).until(DAY1).items()) == {}
+            assert list(q.since(DAY3).until(DAY1).limit(10)) == []
+        finally:
+            restore()
+
+        assert query_calls == []
+        assert get_item_calls == []
+    finally:
+        db.rm_tree(folder)
+
+
+def test_inverted_mtime_range_is_empty_without_issuing_a_query():
+    """Same contract on the mtime index -- including no folder-index
+    read for the epoch tail, which an unlimited desc() would otherwise
+    make.
+    """
+    db = get_db()
+    folder = '/unittests/uidx_inverted_mtime/'
+    try:
+        db[folder + 'anna'] = 1
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime')), ['anna'])
+
+        now = time.time_ns()
+        q = db.folder(folder).by('mtime')
+        query_calls, get_item_calls, restore = _counting(db)
+        try:
+            assert list(q.since(now).until(now - 1000)) == []
+            assert list(q.desc().since(now).until(now - 1000)) == []
+        finally:
+            restore()
+
+        assert query_calls == []
+        assert get_item_calls == []
+    finally:
+        db.rm_tree(folder)
+
+
+def test_equal_bounds_still_query_and_match():
+    """The guard must trip on hi > lo only. since(d).until(d) is the
+    single-day query the feature exists for, and still runs.
+    """
+    db = get_db()
+    folder = '/unittests/uidx_equal_bounds/'
+    try:
+        db.set(folder + 'anna', 1, index={'class_date': DAY2})
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('class_date')
+                         .since(DAY2).until(DAY2)),
+            ['anna'])
     finally:
         db.rm_tree(folder)
 
@@ -465,6 +607,9 @@ def test_allow_scan_cannot_serve_a_user_index():
     folder = '/unittests/uidx_allow_scan/'
     try:
         db.set(folder + 'anna', 1, index={'class_date': DAY1})
+        # The scan fallback reads folder-index, which is a GSI too.
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime')), ['anna'])
         # Force the scan fallback: it is only ever taken when the table
         # has no folder-time-index, which the fixture table does have.
         db._DynamoDB__has_time_index = False
@@ -557,7 +702,8 @@ def test_writes_succeed_without_the_gsi_and_the_query_says_what_to_add():
             Key={'path': db._get_full_path(folder + 'anna')})['Item']
         assert int(item['class_date']) == DAY1
         # The recency index is unaffected: it is present, so it works.
-        assert list(db.folder(folder).by('mtime')) == ['anna']
+        assert_eventually_equal(
+            lambda: list(db.folder(folder).by('mtime')), ['anna'])
 
         with pytest.raises(IndexNotSupported) as excinfo:
             list(db.folder(folder).by('class_date'))

@@ -138,12 +138,42 @@ class FolderQuery:
         since yesterday".
 
         An inverted range (``since(5).until(3)``) yields nothing rather
-        than raising. That is what the underlying DynamoDB ``between``
-        does, and an empty result is the honest answer to an empty
+        than raising: an empty result is the honest answer to an empty
         range -- the caller asked for values that are both above 5 and
         below 3, and there are none.
+
+        That is kydb's contract, not something inherited from a store.
+        DynamoDB's ``BETWEEN`` rejects an inverted range outright with a
+        ValidationException, so backends must consult
+        :meth:`_is_empty_range` before building a query rather than
+        letting the bounds through -- see the note there.
         """
         return self._clone(until_ts=ts)
+
+    def _is_empty_range(self) -> bool:
+        """ Whether ``since()``/``until()`` together select nothing.
+
+        ``since(5).until(3)`` asks for values both >= 5 and <= 3. The
+        documented answer is an empty result rather than an error (see
+        :meth:`until`), and this is the single place that emptiness is
+        recognised, so every backend gives the same answer.
+
+        Backends that hand the bounds to a store must check this
+        *first*. The stores disagree about inverted ranges: DynamoDB's
+        ``BETWEEN`` raises a ValidationException ("upper bound must be
+        greater than or equal to lower bound"), while Redis's
+        ``ZRANGEBYSCORE`` simply returns nothing. Moto accepts one and
+        returns nothing too, which is why this cost a real table to
+        find -- the emulator made DynamoDB look like it agreed.
+
+        Backends that filter client-side (``ScanFolderQuery``, memory,
+        files, S3) need no special case: a row cannot be both above the
+        lower bound and below a smaller upper one, so they already
+        arrive at the same empty answer row by row.
+        """
+        return (self._since_ts is not None
+                and self._until_ts is not None
+                and self._since_ts > self._until_ts)
 
     def limit(self, n: int) -> 'FolderQuery':
         """ Cap the number of results to ``n``.
