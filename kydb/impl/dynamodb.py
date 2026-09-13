@@ -158,8 +158,10 @@ class DynamoDBFolderQuery(FolderQuery):
         sort_key = Key(self._index_name)
 
         if self._since_ts is not None and self._until_ts is not None:
-            # between() is inclusive at both ends, and yields nothing for
-            # an inverted range -- the honest answer to an empty range.
+            # between() is inclusive at both ends. An inverted range
+            # never reaches here -- _raw_query short-circuits it --
+            # which is deliberate: DynamoDB rejects between(hi, lo)
+            # with a ValidationException instead of matching nothing.
             cond = cond & sort_key.between(self._since_ts, self._until_ts)
         elif self._until_ts is not None:
             cond = cond & sort_key.lte(self._until_ts)
@@ -364,6 +366,16 @@ class DynamoDBFolderQuery(FolderQuery):
         """
         self._check_mtime_index_enabled()
 
+        # An inverted range selects nothing, and kydb reports that as an
+        # empty result (FolderQuery._is_empty_range). It has to be
+        # caught before the key condition is built: DynamoDB's BETWEEN
+        # rejects an inverted range with a ValidationException rather
+        # than matching nothing, so the query would never run at all.
+        # Checked after the config gate above, so an index disabled in
+        # config still raises rather than silently coming back empty.
+        if self._is_empty_range():
+            return
+
         if self._db._use_scan_fallback(self._allow_scan):
             if self._index_name != 'mtime':
                 raise IndexNotSupported(
@@ -485,13 +497,42 @@ class DynamoDB(FolderMetaMixin, BaseDB):
         self.__has_time_index = None
 
     def get_raw(self, key):
-        items = self.table.query(
-            KeyConditionExpression=Key('path').eq(key))['Items']
+        """ Read one object by its full path.
 
-        if not items:
+        ``path`` is the table's sole key attribute, so this is a point
+        read and ``get_item`` is the operation that says so. It used to
+        be a ``Query`` with ``KeyConditionExpression=Key('path').eq(key)``
+        -- which matched exactly one item and consumed exactly the same
+        read capacity, so this is not a cost change. It buys three
+        things:
+
+        1. Latency. ``Query`` runs the key condition through the index
+           machinery and returns a paginated result set; ``GetItem`` is
+           a straight key lookup.
+        2. A read that a read-through cache (DAX) can serve coherently.
+           DAX caches query *result sets* under a separate TTL from item
+           reads, so a ``Query`` point read keeps serving the pre-write
+           result after a write invalidates the item
+           (``ak-server/optimisation_plan.md`` section 5.1). Nothing
+           uses DAX today; this removes the trap before anything can.
+        3. The missing-item contract stated directly -- no ``Item`` key
+           rather than an empty ``Items`` list.
+
+        ``contents`` round-trips identically either way: both operations
+        go through the resource API's deserialiser, which returns a
+        binary attribute as ``boto3.dynamodb.types.Binary``, hence
+        ``.value``.
+
+        :param key: str: full path, including base_path.
+        :returns: bytes: the raw, pickled data.
+        :raises KeyError: if no item exists at that path.
+        """
+        item = self.table.get_item(Key={'path': key}).get('Item')
+
+        if item is None:
             raise KeyError(key)
 
-        return items[0]['contents'].value
+        return item['contents'].value
 
     def folder_meta_set_raw(self, key: str, value, index=None):
         """ Write the object as a single ``update_item``.

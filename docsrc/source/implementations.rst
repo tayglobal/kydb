@@ -35,6 +35,13 @@ DynamoDB
        must also appear in the table's ``AttributeDefinitions`` as a
        Number.
 
+    Reading a single object is a ``GetItem`` on ``path``, not a
+    ``Query``: ``path`` is the sole key attribute, so a point read is a
+    point read.  This matters for anyone putting a read-through cache
+    (DAX) in front of the table -- a cache stores query result sets
+    under a TTL separate from item reads, so a point read expressed as
+    a ``Query`` can keep serving a stale result after a write.
+
     Only the first two are needed to read and write. ``folder-time-index``
     serves :meth:`~kydb.interface.KYDBInterface.folder` /
     :meth:`~kydb.interface.KYDBInterface.recent` recency queries, so an
